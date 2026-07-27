@@ -1,14 +1,17 @@
 import React from "react";
-// Import subpath to avoid broken package root (DIR_IMPORT of ./features).
-import Kimi from "@lobehub/icons/es/Kimi";
 
-/** Official Kimi mark from @lobehub/icons (Color variant). */
-export default function KimiLogo({ size = 44, className, color = true }) {
-  const Icon = color && Kimi?.Color ? Kimi.Color : Kimi;
-  if (!Icon) return null;
+/** Kimi logo from local desktop icon asset. */
+export default function KimiLogo({ size = 44, className }) {
   return (
     <span className={className} style={{ display: "inline-flex", lineHeight: 0 }}>
-      <Icon size={size} />
+      <img
+        src="/kimi-logo.png"
+        alt="Kimi"
+        width={size}
+        height={size}
+        style={{ objectFit: "contain", borderRadius: Math.max(6, Math.round(size * 0.18)) }}
+        draggable={false}
+      />
     </span>
   );
 }

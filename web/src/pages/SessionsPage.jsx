@@ -41,19 +41,15 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtInt, fmtTime } from "@/format";
+import {
+  archiveSession,
+  deleteSession,
+  deleteWorkspace,
+  fetchSessionPreview,
+  fetchSessions,
+  unarchiveSession,
+} from "@/lib/backend";
 import { cn } from "@/lib/utils";
-
-async function fetchJson(url, opts) {
-  const res = await fetch(url, opts);
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(data.message || data.error || "request failed");
-    err.data = data;
-    err.status = res.status;
-    throw err;
-  }
-  return data;
-}
 
 function fmtBytes(n) {
   const v = Number(n) || 0;
@@ -95,12 +91,12 @@ export default function SessionsPage({ home, t, locale }) {
       setError(null);
       const started = Date.now();
       try {
-        const params = new URLSearchParams();
-        if (home) params.set("home", home);
-        params.set("status", opts.status || status);
         const ws = opts.workspace !== undefined ? opts.workspace : workspace;
-        if (ws && ws !== "all") params.set("workspace", ws);
-        const res = await fetchJson(`/api/sessions?${params.toString()}`);
+        const res = await fetchSessions(
+          home,
+          opts.status || status,
+          ws && ws !== "all" ? ws : null
+        );
         setData(res);
         setSelected(new Set());
         if (manual) {
@@ -136,24 +132,11 @@ export default function SessionsPage({ home, t, locale }) {
     return m;
   }, [workspaces]);
 
-  const postAction = async (path, body) => {
-    const params = new URLSearchParams();
-    if (home) params.set("home", home);
-    return fetchJson(`/api/sessions/${path}?${params.toString()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  };
-
   const onArchive = async (row) => {
     const key = `${row.workspaceId}/${row.id}`;
     setBusyId(key);
     try {
-      await postAction("archive", {
-        workspaceId: row.workspaceId,
-        sessionId: row.id,
-      });
+      await archiveSession(home, row.workspaceId, row.id);
       await load();
     } catch (e) {
       setError(e.message);
@@ -166,10 +149,7 @@ export default function SessionsPage({ home, t, locale }) {
     const key = `${row.workspaceId}/${row.id}`;
     setBusyId(key);
     try {
-      await postAction("unarchive", {
-        workspaceId: row.workspaceId,
-        sessionId: row.id,
-      });
+      await unarchiveSession(home, row.workspaceId, row.id);
       await load();
     } catch (e) {
       setError(e.message);
@@ -190,12 +170,12 @@ export default function SessionsPage({ home, t, locale }) {
     setPreviewOpen(true);
     setPreview({ loading: true, error: null, data: null, row });
     try {
-      const params = new URLSearchParams();
-      if (home) params.set("home", home);
-      params.set("workspaceId", row.workspaceId);
-      params.set("sessionId", row.id);
-      if (row.status) params.set("status", row.status);
-      const data = await fetchJson(`/api/sessions/preview?${params.toString()}`);
+      const data = await fetchSessionPreview(
+        home,
+        row.workspaceId,
+        row.id,
+        row.status
+      );
       setPreview({ loading: false, error: null, data, row });
     } catch (e) {
       setPreview({ loading: false, error: e.message, data: null, row });
@@ -205,16 +185,7 @@ export default function SessionsPage({ home, t, locale }) {
   const runDeleteWorkspace = async (w) => {
     setConfirmBusy(true);
     try {
-      const params = new URLSearchParams();
-      if (home) params.set("home", home);
-      await fetchJson(`/api/workspaces/delete?${params.toString()}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspaceId: w.id,
-          confirm: true,
-        }),
-      });
+      await deleteWorkspace(home, w.id);
       setConfirm(null);
       if (workspace === w.id) setWorkspace("all");
       await load();
@@ -230,12 +201,7 @@ export default function SessionsPage({ home, t, locale }) {
     setBusyId(key);
     setConfirmBusy(true);
     try {
-      await postAction("delete", {
-        workspaceId: row.workspaceId,
-        sessionId: row.id,
-        status: row.status,
-        confirm: true,
-      });
+      await deleteSession(home, row.workspaceId, row.id, row.status);
       setConfirm(null);
       await load();
     } catch (e) {
@@ -281,10 +247,7 @@ export default function SessionsPage({ home, t, locale }) {
     for (const row of rows) {
       if (row.status !== "active") continue;
       try {
-        await postAction("archive", {
-          workspaceId: row.workspaceId,
-          sessionId: row.id,
-        });
+        await archiveSession(home, row.workspaceId, row.id);
       } catch (e) {
         setError(e.message);
         break;
@@ -303,12 +266,7 @@ export default function SessionsPage({ home, t, locale }) {
     setConfirmBusy(true);
     try {
       for (const row of rows) {
-        await postAction("delete", {
-          workspaceId: row.workspaceId,
-          sessionId: row.id,
-          status: row.status,
-          confirm: true,
-        });
+        await deleteSession(home, row.workspaceId, row.id, row.status);
       }
       setConfirm(null);
       await load();
@@ -534,10 +492,11 @@ export default function SessionsPage({ home, t, locale }) {
                         );
                         for (const row of rows) {
                           try {
-                            await postAction("unarchive", {
-                              workspaceId: row.workspaceId,
-                              sessionId: row.id,
-                            });
+                            await unarchiveSession(
+                              home,
+                              row.workspaceId,
+                              row.id
+                            );
                           } catch (e) {
                             setError(e.message);
                             break;

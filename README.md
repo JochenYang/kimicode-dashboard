@@ -1,74 +1,112 @@
 # Kimi Code Usage Dashboard
 
-本地隐私安全的 Kimi Code CLI Token 用量看板。只读取 `usage.record` 中的**模型名、时间、Token 数量**，以及 `config.toml` 里受限的模型别名映射。
+[![Version](https://img.shields.io/badge/version-1.2.0-0d9488)](./package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-informational)](#desktop-tauri)
+[![UI](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-38bdf8)](#ui-stack)
+[![Desktop](https://img.shields.io/badge/desktop-Tauri%202-FFC131?logo=tauri&logoColor=black)](#desktop-tauri)
+[![i18n](https://img.shields.io/badge/i18n-EN%20%7C%20中文-green)](./README.zh-CN.md)
+[![Privacy](https://img.shields.io/badge/privacy-local%20only-success)](#privacy)
+[![GitHub](https://img.shields.io/badge/GitHub-JochenYang%2Fkimicode--dashboard-181717?logo=github)](https://github.com/JochenYang/kimicode-dashboard)
+[![Stars](https://img.shields.io/github/stars/JochenYang/kimicode-dashboard?style=social)](https://github.com/JochenYang/kimicode-dashboard)
 
-**不会**显示或记录：提示词、回复正文、代码、API Key、Provider 凭据。
+**English** | [简体中文](./README.zh-CN.md)
 
-## 功能
+Local, privacy-safe usage dashboard for [Kimi Code](https://www.kimi.com/) CLI data under `~/.kimi-code` (or `%USERPROFILE%\.kimi-code` on Windows).
 
-- 统计普通输入（`inputOther`）、模型输出（`output`）、缓存读取（`inputCacheRead`）、缓存创建（`inputCacheCreation`）
-- 时间范围：今天 / 近 7 天 / 近 30 天 / 全部
-- 每日趋势、模型统计、缓存命中率、最近请求
-- 简体中文 / English，自动识别系统语言，可在界面切换
-- 按 [Kimi API Platform](https://platform.kimi.ai/) 官方标价估算费用
-- 兼容 `config.toml` 模型别名、`KIMI_MODEL_NAME`、`__kimi_env_model__`
-- 自动识别 `KIMI_CODE_HOME`、`~/.kimi-code`、Windows `%USERPROFILE%\.kimi-code`，也可手动指定目录
+**Author:** Jochen · **Version:** 1.2.0 · **License:** [MIT](./LICENSE)
 
-## 默认扫描目录
+It only reads **model name, timestamps, and token counts** from `usage.record`, plus a **restricted** model-alias map from `config.toml`.  
+It does **not** display or log prompts, replies, code, API keys, or provider credentials.
 
-| 平台 | 路径 |
+![Kimi Code Usage Dashboard screenshot](./assets/screenshot.png)
+
+## Features
+
+- **Token breakdown** — non-cache input (`inputOther`), output, cache read, cache creation
+- **Ranges** — today / last 7 days / last 30 days / all time
+- **Charts & tables** — daily trend, model stats, cache hit rate, recent requests, year heatmap
+- **i18n** — English & Simplified Chinese; auto-detect system language or switch in-app
+- **Cost estimate** — official [Kimi API Platform](https://platform.kimi.ai/) list prices (USD / 1M tokens)
+- **Model mapping** — `config.toml` aliases, `KIMI_MODEL_NAME`, `__kimi_env_model__`
+- **Data home** — auto-detect `KIMI_CODE_HOME`, `~/.kimi-code`, Windows user profile; or pick another folder in the UI
+- **Session manager** — list sessions by workspace, archive / restore, permanent delete, safe text preview (no tools/credentials)
+- **Desktop (optional)** — Tauri 2 shell (Windows / macOS / Linux) with the same UI; GitHub Actions workflow for multi-OS builds
+
+## Default data directory
+
+| Platform | Path |
 | --- | --- |
 | macOS / Linux | `~/.kimi-code` |
 | Windows | `%USERPROFILE%\.kimi-code` |
 
-也可设置环境变量 `KIMI_CODE_HOME`，或在界面中选择其他数据目录。
+Override with env `KIMI_CODE_HOME`, CLI `--home`, or the in-app path control.
 
-## 快速开始
+## Requirements
 
-需要 Node.js 18+。
+- **Web / Node server:** Node.js **18+**
+- **Desktop (optional):** Rust stable, [Tauri CLI 2](https://v2.tauri.app/), platform WebView (WebView2 on Windows)
+
+## Quick start (Web)
 
 ```bash
 cd kimicode-dashboard
 npm install
-npm run build    # 构建 React + Ant Design 前端
-npm start        # 启动本地 API + 静态页面
+npm run build    # React UI → dist/
+npm start        # local API + static UI on 127.0.0.1:3847
 ```
 
-浏览器打开 `http://127.0.0.1:3847/`。
+Open **http://127.0.0.1:3847/**
 
-开发模式（一条命令同时起 API + Vite 热更新）：
+### Development (API + Vite in one command)
 
 ```bash
 npm run dev
 # API  : http://127.0.0.1:3847/
-# Web  : http://127.0.0.1:5173/  （/api 自动代理到后端）
+# Web  : http://127.0.0.1:5173/  (/api proxied to the API)
 ```
 
-如需单独起进程：`npm run dev:api` / `npm run dev:web`。
+Split processes if needed: `npm run dev:api` / `npm run dev:web`.
 
 ```bash
-# 指定数据目录与端口
+# Custom home & port
 node src/server.js --home "C:\Users\you\.kimi-code" --port 3847 --no-open
 ```
 
-前端基于 **React + Tailwind + shadcn/ui 风格组件**（Radix + CVA），含：
-- Linear 风格暗色主题 + 青绿强调色
-- 细滚动条
-- 近一年日消耗热力图
-- Framer Motion 入场动效（尊重 `prefers-reduced-motion`）
-- 表格数字列右对齐、等宽数字
-- **会话管理页**（按工作区/目录隔离）：归档、取消归档、永久删除
+## Desktop (Tauri)
 
-### 会话管理
+```bash
+npm install
+npm run build          # frontend assets for bundle
+npm run tauri:dev      # development window
+npm run tauri:build    # platform installers under desktop/src-tauri/target/
+```
 
-- 入口：顶栏「会话」或 `/sessions`
-- 左侧按 `sessions/wd_*` 工作区隔离；归档落到 `sessions/.kcd-archive/<workspace>/`
-- 删除会移出磁盘并尽量清理 `session_index.jsonl` 对应行
-- 仍不读取 `lastPrompt` / 凭据；仅标题、路径、时间、体积
+In the desktop app, the UI talks to **Rust commands** (same JSON shape as `/api/*`).  
+In the browser, it uses **HTTP** via `web/src/lib/backend.js`.
 
-## 数据来源
+CI: `.github/workflows/desktop.yml` builds on Windows / Ubuntu / macOS (tags `v*` can publish release assets).
 
-扫描 `<home>/sessions/**/wire.jsonl`，仅解析：
+## UI stack
+
+- React + Vite + Tailwind
+- shadcn-style primitives (Radix + CVA)
+- Dark Linear-like theme, teal accent, fine scrollbars
+- Framer Motion entrances (respects `prefers-reduced-motion`)
+- Usage tab + Sessions tab in one shell
+
+### Session manager
+
+- Top nav **Sessions**
+- Workspaces isolated under `sessions/wd_*`
+- Archive path: `sessions/.kcd-archive/<workspace>/`
+- Delete removes on-disk data and best-effort scrub of `session_index.jsonl`
+- Preview shows truncated user/assistant text only — no tool dumps, no secrets
+
+## Data source
+
+Scans `<home>/sessions/**/wire.jsonl` and only aggregates records like:
 
 ```json
 {
@@ -85,15 +123,15 @@ node src/server.js --home "C:\Users\you\.kimi-code" --port 3847 --no-open
 }
 ```
 
-仅累计 `usageScope === "turn"`，避免与 session 汇总重复计数。
+Only `usageScope === "turn"` is counted (avoids double-counting session rollups).
 
-模型映射仅读取 `config.toml` 中的 `default_model` 与 `[models."…"]` 的 `provider` / `model` / `display_name`，并识别环境变量 `KIMI_MODEL_NAME`（对应记录里的 `__kimi_env_model__`）。密钥类字段在解析前会被剥离。
+Model map reads `default_model` and `[models."…"]` `provider` / `model` / `display_name` from `config.toml`, plus env `KIMI_MODEL_NAME` for `__kimi_env_model__`. Secret-looking fields are stripped before use.
 
-## 费用估算
+## Cost table (reference)
 
-官方标价（USD / 1M tokens，以 platform.kimi.ai 为准）：
+USD per **1M** tokens (see [platform.kimi.ai](https://platform.kimi.ai/) for the source of truth):
 
-| 模型 | Cache hit | Input | Output |
+| Model | Cache hit | Input | Output |
 | --- | ---: | ---: | ---: |
 | kimi-k3 | 0.30 | 3.00 | 15.00 |
 | kimi-k2.7-code | 0.19 | 0.95 | 4.00 |
@@ -101,16 +139,26 @@ node src/server.js --home "C:\Users\you\.kimi-code" --port 3847 --no-open
 | kimi-k2.5 | 0.10 | 0.60 | 3.00 |
 | kimi-k2* | 0.15 | 0.60 | 2.50 |
 
-非 Kimi 模型会回退到 K2.6 标价，并在界面标记为「估算」。
+Non-Kimi models fall back to K2.6 rates and are marked **estimated** in the UI.
 
-## 测试
+## Scripts
 
-```bash
-npm test
-```
+| Script | Description |
+| --- | --- |
+| `npm start` | Serve API + built UI (`127.0.0.1:3847`) |
+| `npm run dev` | API + Vite HMR together |
+| `npm run build` | Production frontend → `dist/` |
+| `npm test` | Node test suite |
+| `npm run tauri:dev` | Tauri desktop dev |
+| `npm run tauri:build` | Tauri release bundle |
 
-## 隐私承诺
+## Privacy
 
-- 不上传任何数据（纯本地 HTTP，默认绑定 `127.0.0.1`）
-- 不解析消息正文、工具参数内容、日志全文
-- 不读取或展示 API Key / Provider 凭据
+- No cloud upload — local HTTP binds to **`127.0.0.1`** by default
+- No message bodies, tool argument dumps, or full log text in the usage pipeline
+- No API keys / provider credentials in the UI
+- Session preview redacts likely secret patterns
+
+## License
+
+This project is released under the [MIT License](./LICENSE).

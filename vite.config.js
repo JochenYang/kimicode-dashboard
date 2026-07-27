@@ -13,7 +13,7 @@ export default defineConfig({
   },
   // @lobehub/icons ships ESM that needs pre-bundling under Vite
   optimizeDeps: {
-    include: ["@lobehub/icons/es/Kimi"],
+    include: ["@lobehub/icons/es/Kimi", "@tauri-apps/api/core"],
   },
   build: {
     outDir: "../dist",

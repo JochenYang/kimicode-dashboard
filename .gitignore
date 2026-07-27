@@ -5,3 +5,7 @@ node_modules/
 .vscode/
 dist/
 coverage/
+
+# Tauri / Rust
+**/target/
+desktop/src-tauri/gen/

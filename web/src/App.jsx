@@ -41,6 +41,7 @@ import { DailyBars } from "@/components/DailyBars";
 import { Heatmap } from "@/components/Heatmap";
 import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtUsd } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
+import { fetchPaths, fetchPrices, fetchSummary } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 
 const RANGE_KEYS = [
@@ -73,18 +74,6 @@ function useLocale() {
     localStorage.setItem("kcd_locale", next);
   };
   return { locale, t, changeLocale };
-}
-
-async function fetchJson(url) {
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(data.message || data.error || "request failed");
-    err.data = data;
-    err.status = res.status;
-    throw err;
-  }
-  return data;
 }
 
 const fadeUp = {
@@ -150,11 +139,7 @@ export default function App() {
       setError(null);
       const started = Date.now();
       try {
-        const params = new URLSearchParams();
-        if (nextHome) params.set("home", nextHome);
-        params.set("range", nextRange);
-        if (refresh) params.set("refresh", "1");
-        const summary = await fetchJson(`/api/summary?${params.toString()}`);
+        const summary = await fetchSummary(nextHome, nextRange, refresh);
         setData(summary);
         setHome(summary.home || nextHome);
         setHomeInput(summary.home || nextHome);
@@ -181,10 +166,10 @@ export default function App() {
   );
 
   useEffect(() => {
-    fetchJson("/api/prices")
+    fetchPrices()
       .then((d) => setPrices(d.prices || []))
       .catch(() => setPrices([]));
-    fetchJson("/api/paths")
+    fetchPaths()
       .then((d) => {
         if (!home) {
           setHome(d.current || "");
@@ -302,7 +287,7 @@ export default function App() {
 
   const autoDetect = async () => {
     try {
-      const d = await fetchJson("/api/paths");
+      const d = await fetchPaths();
       const next = d.current || "";
       setHome(next);
       setHomeInput(next);

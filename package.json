@@ -14,7 +14,9 @@
     "dev:api": "node src/server.js --port 3847 --no-open",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "tauri:dev": "cd desktop/src-tauri && cargo tauri dev",
+    "tauri:build": "cd desktop/src-tauri && cargo tauri build"
   },
   "keywords": [
     "kimi-code",
@@ -36,6 +38,7 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@tauri-apps/api": "^2.11.1",
     "class-variance-authority": "^0.7.1",
     "classnames": "^2.5.1",
     "clsx": "^2.1.1",

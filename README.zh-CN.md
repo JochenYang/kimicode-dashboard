@@ -1,0 +1,164 @@
+# Kimi Code 用量看板
+
+[![Version](https://img.shields.io/badge/version-1.2.0-0d9488)](./package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-informational)](#桌面端-tauri)
+[![UI](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-38bdf8)](#界面技术栈)
+[![Desktop](https://img.shields.io/badge/desktop-Tauri%202-FFC131?logo=tauri&logoColor=black)](#桌面端-tauri)
+[![i18n](https://img.shields.io/badge/i18n-EN%20%7C%20中文-green)](./README.md)
+[![Privacy](https://img.shields.io/badge/privacy-仅本地-success)](#隐私)
+[![GitHub](https://img.shields.io/badge/GitHub-JochenYang%2Fkimicode--dashboard-181717?logo=github)](https://github.com/JochenYang/kimicode-dashboard)
+[![Stars](https://img.shields.io/github/stars/JochenYang/kimicode-dashboard?style=social)](https://github.com/JochenYang/kimicode-dashboard)
+
+[English](./README.md) | **简体中文**
+
+本地隐私安全的 [Kimi Code](https://www.kimi.com/) CLI 用量看板，默认读取 `~/.kimi-code`（Windows 为 `%USERPROFILE%\.kimi-code`）。
+
+**作者：** Jochen · **版本：** 1.2.0 · **协议：** [MIT](./LICENSE)
+
+只统计 `usage.record` 中的**模型名、时间与 Token 数量**，以及 `config.toml` 内**受限**的模型别名映射。  
+**不会**展示或记录：提示词、回复正文、代码、API Key、Provider 凭据。
+
+![Kimi Code 用量看板截图](./assets/screenshot.png)
+
+## 功能
+
+- **Token 分项** — 普通输入（`inputOther`）、输出、缓存读取、缓存创建
+- **时间范围** — 今天 / 近 7 天 / 近 30 天 / 全部
+- **图表与表格** — 每日趋势、模型统计、缓存命中率、最近请求、近一年热力图
+- **多语言** — 简体中文与英文；自动识别系统语言，可在应用内切换
+- **费用估算** — 按 [Kimi API Platform](https://platform.kimi.ai/) 官方标价（USD / 百万 Token）
+- **模型映射** — `config.toml` 别名、`KIMI_MODEL_NAME`、`__kimi_env_model__`
+- **数据目录** — 自动识别 `KIMI_CODE_HOME`、`~/.kimi-code`、Windows 用户目录；也可在界面手动选择
+- **会话管理** — 按工作区列会话，归档 / 恢复、永久删除、安全文本预览（不含工具详情与凭据）
+- **桌面端（可选）** — Tauri 2（Windows / macOS / Linux），界面与 Web 一致；GitHub Actions 可多系统构建
+
+## 默认扫描目录
+
+| 平台 | 路径 |
+| --- | --- |
+| macOS / Linux | `~/.kimi-code` |
+| Windows | `%USERPROFILE%\.kimi-code` |
+
+可通过环境变量 `KIMI_CODE_HOME`、命令行 `--home` 或界面路径控件覆盖。
+
+## 环境要求
+
+- **Web / Node 服务：** Node.js **18+**
+- **桌面端（可选）：** Rust stable、[Tauri CLI 2](https://v2.tauri.app/)、系统 WebView（Windows 需 WebView2）
+
+## 快速开始（Web）
+
+```bash
+cd kimicode-dashboard
+npm install
+npm run build    # 构建前端到 dist/
+npm start        # 本机 API + 静态页，127.0.0.1:3847
+```
+
+浏览器打开 **http://127.0.0.1:3847/**
+
+### 开发模式（一条命令起 API + Vite）
+
+```bash
+npm run dev
+# API  : http://127.0.0.1:3847/
+# Web  : http://127.0.0.1:5173/  （/api 自动代理到后端）
+```
+
+如需拆分进程：`npm run dev:api` / `npm run dev:web`。
+
+```bash
+# 指定数据目录与端口
+node src/server.js --home "C:\Users\you\.kimi-code" --port 3847 --no-open
+```
+
+## 桌面端（Tauri）
+
+```bash
+npm install
+npm run build          # 打包前端资源
+npm run tauri:dev      # 桌面开发窗口
+npm run tauri:build    # 安装包输出在 desktop/src-tauri/target/
+```
+
+桌面端通过 **Rust 命令** 取数（JSON 形状与 `/api/*` 一致）。  
+浏览器端通过 **HTTP**，统一封装在 `web/src/lib/backend.js`。
+
+CI：`.github/workflows/desktop.yml` 在 Windows / Ubuntu / macOS 构建（`v*` 标签可发 Release 产物）。
+
+## 界面技术栈
+
+- React + Vite + Tailwind
+- shadcn 风格组件（Radix + CVA）
+- Linear 风格暗色主题、青绿强调色、细滚动条
+- Framer Motion 入场动效（尊重 `prefers-reduced-motion`）
+- 用量页与会话页同壳切换
+
+### 会话管理
+
+- 顶栏进入 **会话**
+- 工作区目录：`sessions/wd_*`
+- 归档路径：`sessions/.kcd-archive/<workspace>/`
+- 删除会移出磁盘，并尽量清理 `session_index.jsonl` 对应行
+- 预览仅截断用户/助手文本 — 不展示工具 dump、不展示密钥
+
+## 数据来源
+
+扫描 `<home>/sessions/**/wire.jsonl`，仅汇总类似：
+
+```json
+{
+  "type": "usage.record",
+  "model": "provider/model",
+  "usage": {
+    "inputOther": 0,
+    "output": 0,
+    "inputCacheRead": 0,
+    "inputCacheCreation": 0
+  },
+  "usageScope": "turn",
+  "time": 0
+}
+```
+
+仅累计 `usageScope === "turn"`，避免与 session 级汇总重复计数。
+
+模型映射读取 `config.toml` 的 `default_model` 与 `[models."…"]` 的 `provider` / `model` / `display_name`，以及环境变量 `KIMI_MODEL_NAME`（对应 `__kimi_env_model__`）。疑似密钥字段会在使用前剥离。
+
+## 费用参考表
+
+单位：USD / **百万** Token（以 [platform.kimi.ai](https://platform.kimi.ai/) 为准）：
+
+| 模型 | Cache hit | Input | Output |
+| --- | ---: | ---: | ---: |
+| kimi-k3 | 0.30 | 3.00 | 15.00 |
+| kimi-k2.7-code | 0.19 | 0.95 | 4.00 |
+| kimi-k2.6 | 0.16 | 0.95 | 4.00 |
+| kimi-k2.5 | 0.10 | 0.60 | 3.00 |
+| kimi-k2* | 0.15 | 0.60 | 2.50 |
+
+非 Kimi 模型回退到 K2.6 标价，并在界面标记为「估算」。
+
+## 脚本
+
+| 脚本 | 说明 |
+| --- | --- |
+| `npm start` | 提供 API + 构建后的 UI（`127.0.0.1:3847`） |
+| `npm run dev` | 同时启动 API 与 Vite 热更新 |
+| `npm run build` | 生产前端 → `dist/` |
+| `npm test` | Node 测试套件 |
+| `npm run tauri:dev` | Tauri 桌面开发 |
+| `npm run tauri:build` | Tauri 发布包 |
+
+## 隐私
+
+- 不上传任何数据 — 默认只绑定 **`127.0.0.1`**
+- 用量链路不解析消息正文、工具参数全文、日志全文
+- 界面不读取或不展示 API Key / Provider 凭据
+- 会话预览会对疑似密钥模式做脱敏
+
+## 协议
+
+本项目采用 [MIT 协议](./LICENSE) 开源，点击可查看完整许可文本。
