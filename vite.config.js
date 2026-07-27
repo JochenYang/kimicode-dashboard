@@ -11,9 +11,16 @@ export default defineConfig({
       "@": path.resolve(__dirname, "web/src"),
     },
   },
+  // @lobehub/icons ships ESM that needs pre-bundling under Vite
+  optimizeDeps: {
+    include: ["@lobehub/icons/es/Kimi"],
+  },
   build: {
     outDir: "../dist",
     emptyOutDir: true,
+    commonjsOptions: {
+      include: [/node_modules/],
+    },
   },
   server: {
     port: 5173,

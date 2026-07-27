@@ -12,6 +12,14 @@ const { scanUsage } = require("./scanner");
 const { aggregate, summaryAllRanges, buildHeatmap } = require("./aggregate");
 const { listPrices } = require("./pricing");
 const { detectLocale, messages } = require("./i18n");
+const {
+  listSessions,
+  archiveSession,
+  unarchiveSession,
+  deleteSession,
+  deleteWorkspace,
+  getSessionPreview,
+} = require("./sessions");
 
 // Prefer Vite build output; fall back to legacy public/ for plain static.
 const DIST = path.join(__dirname, "..", "dist");
@@ -93,6 +101,42 @@ function json(res, status, body) {
   res.end(data);
 }
 
+function readBody(req, limit = 1_000_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > limit) {
+        reject(Object.assign(new Error("body too large"), { code: "body_too_large" }));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch (err) {
+        reject(Object.assign(new Error("invalid json"), { code: "invalid_json" }));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function mapSessionError(err) {
+  const code = err && err.code;
+  if (code === "not_found") return 404;
+  if (code === "invalid_workspace" || code === "invalid_session" || code === "path_escape") {
+    return 400;
+  }
+  if (code === "exists") return 409;
+  return 500;
+}
+
 function sendFile(res, filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const types = {
@@ -116,7 +160,7 @@ function sendFile(res, filePath) {
   });
 }
 
-function handleApi(req, res, url, cliHome) {
+async function handleApi(req, res, url, cliHome) {
   const home = getHome(url.searchParams.get("home"), cliHome);
 
   if (url.pathname === "/api/health") {
@@ -199,17 +243,139 @@ function handleApi(req, res, url, cliHome) {
     });
   }
 
+  // --- Session management (workspace-isolated) ---
+  if (url.pathname === "/api/sessions" && req.method === "GET") {
+    if (!isKimiHome(home)) {
+      return json(res, 400, { error: "invalid_home", home });
+    }
+    const status = url.searchParams.get("status") || "active";
+    const workspace = url.searchParams.get("workspace") || null;
+    const result = listSessions(home, { status, workspace });
+    if (result.error) return json(res, 400, result);
+    return json(res, 200, result);
+  }
+
+  if (url.pathname === "/api/sessions/archive" && req.method === "POST") {
+    if (!isKimiHome(home)) return json(res, 400, { error: "invalid_home", home });
+    try {
+      const body = await readBody(req);
+      const out = archiveSession(home, body.workspaceId, body.sessionId);
+      // Invalidate usage cache — files moved
+      if (cache.home === home) cache.scannedAt = 0;
+      return json(res, 200, out);
+    } catch (err) {
+      return json(res, mapSessionError(err), {
+        error: err.code || "error",
+        message: String(err.message || err),
+      });
+    }
+  }
+
+  if (url.pathname === "/api/sessions/unarchive" && req.method === "POST") {
+    if (!isKimiHome(home)) return json(res, 400, { error: "invalid_home", home });
+    try {
+      const body = await readBody(req);
+      const out = unarchiveSession(home, body.workspaceId, body.sessionId);
+      if (cache.home === home) cache.scannedAt = 0;
+      return json(res, 200, out);
+    } catch (err) {
+      return json(res, mapSessionError(err), {
+        error: err.code || "error",
+        message: String(err.message || err),
+      });
+    }
+  }
+
+  if (url.pathname === "/api/sessions/delete" && req.method === "POST") {
+    if (!isKimiHome(home)) return json(res, 400, { error: "invalid_home", home });
+    try {
+      const body = await readBody(req);
+      if (body.confirm !== true) {
+        return json(res, 400, {
+          error: "confirm_required",
+          message: "Pass confirm:true to permanently delete a session",
+        });
+      }
+      const out = deleteSession(
+        home,
+        body.workspaceId,
+        body.sessionId,
+        body.status || null
+      );
+      if (cache.home === home) cache.scannedAt = 0;
+      return json(res, 200, out);
+    } catch (err) {
+      return json(res, mapSessionError(err), {
+        error: err.code || "error",
+        message: String(err.message || err),
+      });
+    }
+  }
+
+  if (url.pathname === "/api/sessions/preview" && req.method === "GET") {
+    if (!isKimiHome(home)) return json(res, 400, { error: "invalid_home", home });
+    try {
+      const workspaceId = url.searchParams.get("workspaceId");
+      const sessionId = url.searchParams.get("sessionId");
+      const status = url.searchParams.get("status") || null;
+      const out = getSessionPreview(home, workspaceId, sessionId, status);
+      return json(res, 200, out);
+    } catch (err) {
+      return json(res, mapSessionError(err), {
+        error: err.code || "error",
+        message: String(err.message || err),
+      });
+    }
+  }
+
+  if (url.pathname === "/api/workspaces/delete" && req.method === "POST") {
+    if (!isKimiHome(home)) return json(res, 400, { error: "invalid_home", home });
+    try {
+      const body = await readBody(req);
+      if (body.confirm !== true) {
+        return json(res, 400, {
+          error: "confirm_required",
+          message: "Pass confirm:true to delete an empty workspace",
+        });
+      }
+      const out = deleteWorkspace(home, body.workspaceId, {
+        force: body.force === true,
+      });
+      if (cache.home === home) cache.scannedAt = 0;
+      return json(res, 200, out);
+    } catch (err) {
+      const status = err.code === "not_empty" ? 409 : mapSessionError(err);
+      return json(res, status, {
+        error: err.code || "error",
+        message: String(err.message || err),
+        activeCount: err.activeCount,
+        archivedCount: err.archivedCount,
+      });
+    }
+  }
+
   json(res, 404, { error: "not_found" });
 }
 
 function createServer(cliHome) {
   return http.createServer((req, res) => {
+    const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    if (url.pathname.startsWith("/api/")) {
+      Promise.resolve(handleApi(req, res, url, cliHome)).catch((err) => {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(err.message || err) }));
+      });
+      return;
+    }
     try {
-      const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-      if (url.pathname.startsWith("/api/")) {
-        return handleApi(req, res, url, cliHome);
-      }
       let rel = url.pathname === "/" ? "/index.html" : url.pathname;
+      // SPA fallback for client routes
+      if (
+        !rel.includes(".") &&
+        (rel === "/sessions" || rel.startsWith("/sessions/"))
+      ) {
+        rel = "/index.html";
+      }
       // prevent path traversal
       rel = path.normalize(rel).replace(/^(\.\.[/\\])+/, "");
       const filePath = path.join(PUBLIC, rel);

@@ -56,6 +56,14 @@ node src/server.js --home "C:\Users\you\.kimi-code" --port 3847 --no-open
 - 近一年日消耗热力图
 - Framer Motion 入场动效（尊重 `prefers-reduced-motion`）
 - 表格数字列右对齐、等宽数字
+- **会话管理页**（按工作区/目录隔离）：归档、取消归档、永久删除
+
+### 会话管理
+
+- 入口：顶栏「会话」或 `/sessions`
+- 左侧按 `sessions/wd_*` 工作区隔离；归档落到 `sessions/.kcd-archive/<workspace>/`
+- 删除会移出磁盘并尽量清理 `session_index.jsonl` 对应行
+- 仍不读取 `lastPrompt` / 凭据；仅标题、路径、时间、体积
 
 ## 数据来源
 

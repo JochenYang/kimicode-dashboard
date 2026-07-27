@@ -3,10 +3,14 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
   FolderOpen,
   Languages,
+  LayoutDashboard,
   Loader2,
+  MessagesSquare,
   RefreshCw,
   ScanSearch,
 } from "lucide-react";
+import KimiLogo from "@/components/KimiLogo";
+import SessionsPage from "@/pages/SessionsPage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -107,7 +111,22 @@ export default function App() {
   const [recentPage, setRecentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [modelFilter, setModelFilter] = useState("all");
+  const [page, setPage] = useState(() => {
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/sessions")) {
+      return "sessions";
+    }
+    return localStorage.getItem("kcd_page") || "usage";
+  });
   const rangeReady = useRef(false);
+
+  const goPage = (next) => {
+    setPage(next);
+    localStorage.setItem("kcd_page", next);
+    if (typeof window !== "undefined") {
+      const path = next === "sessions" ? "/sessions" : "/";
+      window.history.replaceState({}, "", path);
+    }
+  };
 
   const loadSummary = useCallback(
     async (opts = {}) => {
@@ -271,28 +290,43 @@ export default function App() {
     <div className="mx-auto max-w-[1240px] px-4 py-6 pb-16 sm:px-6">
       {/* Header */}
       <motion.header
-        className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+        className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
         initial={reduceMotion ? false : "hidden"}
         animate="show"
         variants={fadeUp}
       >
-        <div className="flex items-start gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-sm font-bold text-primary-foreground shadow-panel">
-            K
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#0b1220] shadow-panel ring-1 ring-white/10">
+            <KimiLogo size={36} />
           </div>
-          <div>
-            <div className="mb-0.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          <div className="flex min-w-0 flex-col justify-center leading-tight">
+            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
               {t("workspace")}
             </div>
             <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
               {t("appTitle")}
             </h1>
-            <p className="mt-1 max-w-[52ch] text-sm text-muted-foreground text-balance">
-              {t("subtitle")}
-            </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-border bg-secondary/50 p-1">
+            <Button
+              size="sm"
+              variant={page === "usage" ? "default" : "ghost"}
+              onClick={() => goPage("usage")}
+            >
+              <LayoutDashboard className="h-3.5 w-3.5" />
+              {t("navUsage")}
+            </Button>
+            <Button
+              size="sm"
+              variant={page === "sessions" ? "default" : "ghost"}
+              onClick={() => goPage("sessions")}
+            >
+              <MessagesSquare className="h-3.5 w-3.5" />
+              {t("navSessions")}
+            </Button>
+          </div>
           <Select value={locale} onValueChange={changeLocale}>
             <SelectTrigger className="w-[120px]" aria-label={t("language")}>
               <Languages className="mr-1 h-3.5 w-3.5 opacity-70" />
@@ -303,17 +337,19 @@ export default function App() {
               <SelectItem value="en">English</SelectItem>
             </SelectContent>
           </Select>
-          <Button
-            onClick={() => loadSummary({ refresh: true })}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <RefreshCw />
-            )}
-            {t("refresh")}
-          </Button>
+          {page === "usage" ? (
+            <Button
+              onClick={() => loadSummary({ refresh: true })}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <RefreshCw />
+              )}
+              {t("refresh")}
+            </Button>
+          ) : null}
         </div>
       </motion.header>
 
@@ -366,12 +402,18 @@ export default function App() {
         </Card>
       </motion.div>
 
-      {error ? (
+      {error && page === "usage" ? (
         <div className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-red-200">
           {error}
         </div>
       ) : null}
 
+      {page === "sessions" ? (
+        <SessionsPage home={home} t={t} locale={locale} />
+      ) : null}
+
+      {page === "usage" ? (
+      <>
       {/* Range tabs */}
       <motion.div
         className="mb-4"
@@ -867,6 +909,8 @@ export default function App() {
           .filter(Boolean)
           .join(" · ")}
       </footer>
+      </>
+      ) : null}
     </div>
   );
 }
