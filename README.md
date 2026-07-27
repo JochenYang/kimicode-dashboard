@@ -1,13 +1,7 @@
 # Kimi Code Usage Dashboard
 
-**English** | [简体中文](./README.zh-CN.md)
-
-Local, privacy-safe usage dashboard for [Kimi Code](https://www.kimi.com/) CLI data under `~/.kimi-code` (or `%USERPROFILE%\.kimi-code` on Windows).
-
-**Author:** Jochen · **Version:** 1.2.0
-
-### Build with
-
+[![License](https://img.shields.io/badge/LICENSE-MIT-22C55E?style=flat-square&labelColor=1F2937)](./LICENSE)
+[![Platform](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-6B7280?style=flat-square&labelColor=1F2937)](#desktop-tauri)
 [![Node](https://img.shields.io/badge/NODE-18%2B-339933?style=flat-square&labelColor=1F2937&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/REACT-19-61DAFB?style=flat-square&labelColor=1F2937&logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/VITE-6-646CFF?style=flat-square&labelColor=1F2937&logo=vite&logoColor=white)](https://vitejs.dev/)
@@ -15,11 +9,13 @@ Local, privacy-safe usage dashboard for [Kimi Code](https://www.kimi.com/) CLI d
 [![Rust](https://img.shields.io/badge/RUST-stable-DEA584?style=flat-square&labelColor=1F2937&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/TAURI-2-FFC131?style=flat-square&labelColor=1F2937&logo=tauri&logoColor=black)](#desktop-tauri)
 
-[![Platform](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-6B7280?style=flat-square&labelColor=1F2937)](#desktop-tauri)
-[![License](https://img.shields.io/badge/LICENSE-MIT-22C55E?style=flat-square&labelColor=1F2937)](./LICENSE)
+**English** · [简体中文](./README.zh-CN.md)
 
-It only reads **model name, timestamps, and token counts** from `usage.record`, plus a **restricted** model-alias map from `config.toml`.  
-It does **not** display or log prompts, replies, code, API keys, or provider credentials.
+Local, privacy-safe usage dashboard for [Kimi Code](https://www.kimi.com/) CLI  
+(`~/.kimi-code` · Windows `%USERPROFILE%\.kimi-code`).
+
+Reads only **model name, time, and token counts** from `usage.record`, plus a restricted model-alias map from `config.toml`.  
+Does **not** show or log prompts, replies, code, API keys, or provider credentials.
 
 ![Kimi Code Usage Dashboard screenshot](./assets/screenshot.png)
 

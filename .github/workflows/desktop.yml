@@ -5,11 +5,21 @@ on:
     branches: [main, feat/*]
     tags:
       - "v*"
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - "assets/**"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - "assets/**"
 
 env:
   CARGO_TERM_COLOR: always
+  # Avoid interactive prompts in CI
+  CI: true
 
 jobs:
   build:
@@ -20,17 +30,14 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: KimiCodeDashboard-Windows-x86_64
-            extension: .exe
 
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: KimiCodeDashboard-Linux-x86_64
-            extension: .AppImage
 
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: KimiCodeDashboard-macOS-aarch64
-            extension: .dmg
 
     runs-on: ${{ matrix.os }}
 
@@ -68,10 +75,13 @@ jobs:
             libjavascriptcoregtk-4.1-dev
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2"
+        run: cargo install tauri-cli --version "^2" --locked
 
       - name: Build Tauri app
-        run: cargo tauri build --manifest-path desktop/src-tauri/Cargo.toml
+        # tauri-cli has no --manifest-path; run inside the crate dir.
+        # --no-sign: repo may not have TAURI_SIGNING_* secrets yet.
+        working-directory: desktop/src-tauri
+        run: cargo tauri build --ci --no-sign --target ${{ matrix.target }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -81,14 +91,21 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
-            desktop/src-tauri/target/release/Kimi Code Dashboard*
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*
             desktop/src-tauri/target/release/bundle/**/*
+            desktop/src-tauri/target/${{ matrix.target }}/release/kimicode-dashboard*
+            desktop/src-tauri/target/${{ matrix.target }}/release/Kimi Code Dashboard*
+            desktop/src-tauri/target/release/kimicode-dashboard*
+            desktop/src-tauri/target/release/Kimi Code Dashboard*
           if-no-files-found: warn
 
   release:
+    # Only tag pushes like v1.2.0 create a GitHub Release — not PRs, not plain main pushes.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

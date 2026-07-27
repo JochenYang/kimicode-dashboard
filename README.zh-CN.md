@@ -1,13 +1,7 @@
 # Kimi Code 用量看板
 
-[English](./README.md) | **简体中文**
-
-本地隐私安全的 [Kimi Code](https://www.kimi.com/) CLI 用量看板，默认读取 `~/.kimi-code`（Windows 为 `%USERPROFILE%\.kimi-code`）。
-
-**作者：** Jochen · **版本：** 1.2.0
-
-### 技术栈
-
+[![License](https://img.shields.io/badge/LICENSE-MIT-22C55E?style=flat-square&labelColor=1F2937)](./LICENSE)
+[![Platform](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-6B7280?style=flat-square&labelColor=1F2937)](#桌面端-tauri)
 [![Node](https://img.shields.io/badge/NODE-18%2B-339933?style=flat-square&labelColor=1F2937&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/REACT-19-61DAFB?style=flat-square&labelColor=1F2937&logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/VITE-6-646CFF?style=flat-square&labelColor=1F2937&logo=vite&logoColor=white)](https://vitejs.dev/)
@@ -15,11 +9,13 @@
 [![Rust](https://img.shields.io/badge/RUST-stable-DEA584?style=flat-square&labelColor=1F2937&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/TAURI-2-FFC131?style=flat-square&labelColor=1F2937&logo=tauri&logoColor=black)](#桌面端-tauri)
 
-[![Platform](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-6B7280?style=flat-square&labelColor=1F2937)](#桌面端-tauri)
-[![License](https://img.shields.io/badge/LICENSE-MIT-22C55E?style=flat-square&labelColor=1F2937)](./LICENSE)
+[English](./README.md) · **简体中文**
 
-只统计 `usage.record` 中的**模型名、时间与 Token 数量**，以及 `config.toml` 内**受限**的模型别名映射。  
-**不会**展示或记录：提示词、回复正文、代码、API Key、Provider 凭据。
+本地隐私安全的 [Kimi Code](https://www.kimi.com/) CLI 用量看板  
+（`~/.kimi-code` · Windows `%USERPROFILE%\.kimi-code`）。
+
+只读取 `usage.record` 中的**模型名、时间与 Token 数量**，以及 `config.toml` 内受限的模型别名。  
+**不**展示或记录提示词、回复、代码、API Key、Provider 凭据。
 
 ![Kimi Code 用量看板截图](./assets/screenshot.png)
 
