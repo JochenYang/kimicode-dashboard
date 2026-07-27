@@ -146,21 +146,58 @@ describe("sessions manager", () => {
     const wireDir = path.join(tmp, "sessions", ws, sid, "agents", "main");
     fs.mkdirSync(wireDir, { recursive: true });
     const lines = [
+      // Duplicate user path: turn.prompt + append_message (should dedupe)
+      JSON.stringify({
+        type: "turn.prompt",
+        input: [{ type: "text", text: "hello preview" }],
+        time: 1,
+      }),
       JSON.stringify({
         type: "context.append_message",
         message: {
           role: "user",
           content: [{ type: "text", text: "hello preview" }],
         },
-        time: 1,
+        time: 2,
+      }),
+      // Assistant lives in content.part stream, not role=assistant messages
+      JSON.stringify({
+        type: "context.append_loop_event",
+        event: {
+          type: "content.part",
+          turnId: "0",
+          step: 1,
+          stepUuid: "step-1",
+          part: { type: "think", think: "hidden reasoning" },
+        },
+        time: 3,
       }),
       JSON.stringify({
-        type: "context.append_message",
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "hi there" }],
+        type: "context.append_loop_event",
+        event: {
+          type: "content.part",
+          turnId: "0",
+          step: 1,
+          stepUuid: "step-1",
+          part: { type: "text", text: "hi " },
         },
-        time: 2,
+        time: 4,
+      }),
+      JSON.stringify({
+        type: "context.append_loop_event",
+        event: {
+          type: "content.part",
+          turnId: "0",
+          step: 1,
+          stepUuid: "step-1",
+          part: { type: "text", text: "there" },
+        },
+        time: 5,
+      }),
+      JSON.stringify({
+        type: "context.append_loop_event",
+        event: { type: "step.end", turnId: "0", step: 1, stepUuid: "step-1" },
+        time: 6,
       }),
       JSON.stringify({
         type: "context.append_message",
@@ -168,13 +205,18 @@ describe("sessions manager", () => {
           role: "user",
           content: [{ type: "text", text: "api_key = sk-ABCDEFGHIJKLMNOP" }],
         },
-        time: 3,
+        time: 7,
       }),
     ];
     fs.writeFileSync(path.join(wireDir, "wire.jsonl"), lines.join("\n"), "utf8");
     const prev = getSessionPreview(tmp, ws, sid, "active");
-    assert.ok(prev.messages.length >= 2);
+    // 1 user (deduped) + 1 assistant + 1 redacted user
+    assert.equal(prev.messages.length, 3);
+    assert.equal(prev.messages[0].role, "user");
     assert.equal(prev.messages[0].text.includes("hello"), true);
+    assert.equal(prev.messages[1].role, "assistant");
+    assert.equal(prev.messages[1].text, "hi there");
+    assert.equal(prev.messages[1].text.includes("hidden reasoning"), false);
     const blob = JSON.stringify(prev);
     assert.equal(blob.includes("sk-ABCDEF"), false);
   });

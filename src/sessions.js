@@ -460,8 +460,71 @@ function extractTextParts(content) {
   return parts.join("\n");
 }
 
+function extractTurnInputText(input) {
+  if (typeof input === "string") return input;
+  if (!Array.isArray(input)) return "";
+  return input
+    .map((x) => {
+      if (!x) return "";
+      if (typeof x === "string") return x;
+      if (x.type === "text" && typeof x.text === "string") return x.text;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizePreviewText(s) {
+  return String(s || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function looksLikeSecret(raw) {
+  return /api[_-]?key|sk-[a-zA-Z0-9]{12,}|BEGIN (RSA |OPENSSH )?PRIVATE KEY/i.test(
+    raw
+  );
+}
+
+function pushPreviewMessage(messages, msg) {
+  if (!msg || !msg.text || !String(msg.text).trim()) return;
+  const norm = normalizePreviewText(msg.text);
+  if (!norm) return;
+  const last = messages[messages.length - 1];
+  // Drop exact consecutive duplicates (turn.prompt + append_message, steers, etc.)
+  if (
+    last &&
+    last.role === msg.role &&
+    normalizePreviewText(last.text) === norm
+  ) {
+    // keep earlier timestamp if missing on last
+    if (!last.time && msg.time) last.time = msg.time;
+    return;
+  }
+  messages.push({
+    role: msg.role,
+    time: msg.time || null,
+    text: clipText(msg.text),
+  });
+}
+
+function flushAssistantStep(messages, bucket) {
+  if (!bucket) return;
+  const text = (bucket.texts || []).join("");
+  if (!text.trim()) return;
+  pushPreviewMessage(messages, {
+    role: "assistant",
+    time: bucket.time || null,
+    text: looksLikeSecret(text)
+      ? "[redacted: possible secret content]"
+      : text,
+  });
+}
+
 /**
  * Privacy-safe session preview: roles + truncated text only.
+ * - User: context.append_message (preferred); turn.prompt/steer only as fallback
+ * - Assistant: reconstruct from content.part loop events (wire rarely stores role=assistant)
  * Skips tool dumps, usage, credentials. Caps message count/size.
  */
 function getSessionPreview(home, workspaceId, sessionId, statusHint) {
@@ -512,15 +575,36 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
       text = "";
     }
     const lines = text.split(/\r?\n/);
+    // stepKey -> { texts:[], time }
+    let currentAssistant = null;
+    let currentStepKey = null;
+
+    const maybeStartAssistantStep = (stepKey, time) => {
+      if (currentStepKey && currentStepKey !== stepKey) {
+        flushAssistantStep(messages, currentAssistant);
+        currentAssistant = null;
+      }
+      currentStepKey = stepKey;
+      if (!currentAssistant) {
+        currentAssistant = { texts: [], time: time || null };
+      } else if (!currentAssistant.time && time) {
+        currentAssistant.time = time;
+      }
+    };
+
     for (const line of lines) {
-      if (!line || messages.length >= PREVIEW_MAX_MESSAGES) {
-        if (line) truncated = true;
+      if (!line) continue;
+      if (messages.length >= PREVIEW_MAX_MESSAGES) {
+        truncated = true;
         break;
       }
+      // Fast path filter
       if (
         !line.includes('"context.append_message"') &&
         !line.includes('"turn.steer"') &&
-        !line.includes('"turn.prompt"')
+        !line.includes('"turn.prompt"') &&
+        !line.includes('"content.part"') &&
+        !line.includes('"step.end"')
       ) {
         continue;
       }
@@ -531,46 +615,70 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
         continue;
       }
       const type = obj.type;
+
       if (type === "context.append_message") {
+        // Flush pending assistant text before a new user/system message
+        if (currentAssistant) {
+          flushAssistantStep(messages, currentAssistant);
+          currentAssistant = null;
+          currentStepKey = null;
+        }
         const msg = obj.message || {};
         const role = msg.role || "unknown";
-        // Skip pure tool result noise in preview; keep user/assistant/system
         if (role === "tool") continue;
         const raw = extractTextParts(msg.content);
         if (!raw.trim()) continue;
-        // Drop obvious secret-looking lines
-        if (/api[_-]?key|sk-[a-zA-Z0-9]{12,}|BEGIN (RSA |OPENSSH )?PRIVATE KEY/i.test(raw)) {
-          messages.push({
-            role,
-            time: obj.time || null,
-            text: "[redacted: possible secret content]",
-          });
-          continue;
-        }
-        messages.push({
+        pushPreviewMessage(messages, {
           role,
           time: obj.time || null,
-          text: clipText(raw),
+          text: looksLikeSecret(raw)
+            ? "[redacted: possible secret content]"
+            : raw,
         });
-      } else if (type === "turn.steer" || type === "turn.prompt") {
-        const input = obj.input;
-        let raw = "";
-        if (typeof input === "string") raw = input;
-        else if (Array.isArray(input)) {
-          raw = input
-            .map((x) => (x && x.type === "text" ? x.text : ""))
-            .filter(Boolean)
-            .join("\n");
-        }
+        continue;
+      }
+
+      if (type === "turn.steer" || type === "turn.prompt") {
+        // Only use as user fallback; dedupe will drop if append_message already added it.
+        const raw = extractTurnInputText(obj.input);
         if (!raw.trim()) continue;
-        messages.push({
+        // Prefer not to interrupt assistant reconstruction mid-step unless empty
+        pushPreviewMessage(messages, {
           role: "user",
           time: obj.time || null,
-          text: clipText(raw),
+          text: looksLikeSecret(raw)
+            ? "[redacted: possible secret content]"
+            : raw,
         });
+        continue;
+      }
+
+      if (type === "context.append_loop_event") {
+        const ev = obj.event || {};
+        const evType = ev.type;
+        if (evType === "content.part") {
+          const part = ev.part || {};
+          // Visible assistant reply text only (skip think / tool_use noise)
+          if (part.type === "text" && typeof part.text === "string" && part.text) {
+            const stepKey = String(
+              ev.stepUuid || `${ev.turnId || ""}:${ev.step || ""}`
+            );
+            maybeStartAssistantStep(stepKey, obj.time || null);
+            currentAssistant.texts.push(part.text);
+          }
+          continue;
+        }
+        if (evType === "step.end") {
+          flushAssistantStep(messages, currentAssistant);
+          currentAssistant = null;
+          currentStepKey = null;
+        }
       }
     }
-    if (lines.length > 5000) truncated = true;
+    // trailing assistant buffer
+    flushAssistantStep(messages, currentAssistant);
+    if (lines.length > 8000) truncated = true;
+    if (messages.length >= PREVIEW_MAX_MESSAGES) truncated = true;
   }
 
   return {
