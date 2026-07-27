@@ -36,14 +36,15 @@ npm start        # 启动本地 API + 静态页面
 
 浏览器打开 `http://127.0.0.1:3847/`。
 
-开发模式（前端热更新 + API 代理）：
+开发模式（一条命令同时起 API + Vite 热更新）：
 
 ```bash
-# 终端 1
-npm run dev:api
-# 终端 2
 npm run dev
+# API  : http://127.0.0.1:3847/
+# Web  : http://127.0.0.1:5173/  （/api 自动代理到后端）
 ```
+
+如需单独起进程：`npm run dev:api` / `npm run dev:web`。
 
 ```bash
 # 指定数据目录与端口
