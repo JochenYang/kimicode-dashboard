@@ -9,6 +9,13 @@ import {
 import { fmtPct, fmtTokens, fmtUsd } from "@/format";
 
 export function DailyBars({ daily, t, reducedMotion = false }) {
+  // First paint only — avoid replaying bar growth on every refresh.
+  const enteredRef = React.useRef(false);
+  React.useEffect(() => {
+    enteredRef.current = true;
+  }, []);
+  const skipEnter = reducedMotion || enteredRef.current;
+
   if (!daily?.length) {
     return (
       <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
@@ -34,10 +41,10 @@ export function DailyBars({ daily, t, reducedMotion = false }) {
                   <motion.div
                     className="w-full rounded-t-md rounded-b-sm bg-gradient-to-t from-primary/50 to-primary"
                     style={{ height: h, transformOrigin: "bottom" }}
-                    initial={reducedMotion ? false : { scaleY: 0, opacity: 0 }}
+                    initial={skipEnter ? false : { scaleY: 0, opacity: 0 }}
                     animate={{ scaleY: 1, opacity: 1 }}
                     transition={
-                      reducedMotion
+                      skipEnter
                         ? { duration: 0 }
                         : {
                             delay: Math.min(i * 0.02, 0.5),

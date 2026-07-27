@@ -105,6 +105,7 @@ export default function App() {
     () => localStorage.getItem("kcd_range") || "all"
   );
   const [loading, setLoading] = useState(false);
+  const [refreshFlash, setRefreshFlash] = useState(false);
   const [data, setData] = useState(null);
   const [prices, setPrices] = useState([]);
   const [error, setError] = useState(null);
@@ -118,6 +119,16 @@ export default function App() {
     return localStorage.getItem("kcd_page") || "usage";
   });
   const rangeReady = useRef(false);
+  // Play entrance motion only once — refresh must not re-trigger fade/stagger.
+  const entered = useRef(false);
+  const loadingRef = useRef(false);
+  const flashTimer = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
 
   const goPage = (next) => {
     setPage(next);
@@ -131,8 +142,13 @@ export default function App() {
   const loadSummary = useCallback(
     async (opts = {}) => {
       const { refresh = false, nextHome = home, nextRange = range } = opts;
+      // Ignore double-clicks while a refresh is in flight
+      if (loadingRef.current && refresh) return;
+      loadingRef.current = true;
       setLoading(true);
+      setRefreshFlash(false);
       setError(null);
+      const started = Date.now();
       try {
         const params = new URLSearchParams();
         if (nextHome) params.set("home", nextHome);
@@ -143,11 +159,22 @@ export default function App() {
         setHome(summary.home || nextHome);
         setHomeInput(summary.home || nextHome);
         localStorage.setItem("kcd_home", summary.home || nextHome || "");
+        if (refresh) {
+          setRefreshFlash(true);
+          if (flashTimer.current) clearTimeout(flashTimer.current);
+          flashTimer.current = setTimeout(() => setRefreshFlash(false), 1200);
+        }
       } catch (e) {
         setData(null);
         setError(e.data?.message || e.message || t("homeInvalid"));
       } finally {
+        // Keep spinner visible briefly so fast cache hits still feel intentional
+        const minMs = refresh ? 320 : 0;
+        const wait = Math.max(0, minMs - (Date.now() - started));
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        loadingRef.current = false;
         setLoading(false);
+        entered.current = true;
       }
     },
     [home, range, t]
@@ -291,7 +318,7 @@ export default function App() {
       {/* Header */}
       <motion.header
         className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-        initial={reduceMotion ? false : "hidden"}
+        initial={reduceMotion || entered.current ? false : "hidden"}
         animate="show"
         variants={fadeUp}
       >
@@ -301,11 +328,19 @@ export default function App() {
           </div>
           <div className="flex min-w-0 flex-col justify-center leading-tight">
             <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              {t("workspace")}
+              {t("brandEyebrow")}
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              {t("appTitle")}
-            </h1>
+            <div className="flex items-end gap-2.5">
+              <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                {t("appTitle")}
+              </h1>
+              <span className="mb-0.5 shrink-0 text-[11px] leading-none text-muted-foreground/85 tabular-nums">
+                {fill(t("appVersionBy"), {
+                  version: "1.2.0",
+                  author: "Jochen",
+                })}
+              </span>
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -341,13 +376,34 @@ export default function App() {
             <Button
               onClick={() => loadSummary({ refresh: true })}
               disabled={loading}
-            >
-              {loading ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <RefreshCw />
+              aria-busy={loading}
+              className={cn(
+                refreshFlash &&
+                  !loading &&
+                  "ring-1 ring-white/35 bg-primary/90"
               )}
-              {t("refresh")}
+              title={
+                loading
+                  ? t("refreshing")
+                  : refreshFlash
+                    ? t("refreshed")
+                    : t("refresh")
+              }
+            >
+              <RefreshCw
+                className={cn(
+                  "h-4 w-4 shrink-0 text-current",
+                  loading && "icon-spin"
+                )}
+                aria-hidden
+              />
+              <span>
+                {loading
+                  ? t("refreshing")
+                  : refreshFlash
+                    ? t("refreshed")
+                    : t("refresh")}
+              </span>
             </Button>
           ) : null}
         </div>
@@ -356,7 +412,7 @@ export default function App() {
       {/* Path bar */}
       <motion.div
         custom={1}
-        initial={reduceMotion ? false : "hidden"}
+        initial={reduceMotion || entered.current ? false : "hidden"}
         animate="show"
         variants={fadeUp}
       >
@@ -418,7 +474,7 @@ export default function App() {
       <motion.div
         className="mb-4"
         custom={2}
-        initial={reduceMotion ? false : "hidden"}
+        initial={reduceMotion || entered.current ? false : "hidden"}
         animate="show"
         variants={fadeUp}
       >
@@ -464,7 +520,7 @@ export default function App() {
               key={r.value}
               type="button"
               custom={i}
-              initial={reduceMotion ? false : "hidden"}
+              initial={reduceMotion || entered.current ? false : "hidden"}
               animate="show"
               variants={fadeUp}
               onClick={() => setRange(r.value)}
@@ -491,7 +547,7 @@ export default function App() {
       {/* Heatmap */}
       <motion.div
         custom={3}
-        initial={reduceMotion ? false : "hidden"}
+        initial={reduceMotion || entered.current ? false : "hidden"}
         animate="show"
         variants={fadeUp}
         className="mb-5"
@@ -518,14 +574,19 @@ export default function App() {
           <motion.div
             key={item.title}
             custom={i}
-            initial={reduceMotion ? false : "hidden"}
+            initial={reduceMotion || entered.current ? false : "hidden"}
             animate="show"
             variants={fadeUp}
           >
             <Card className="h-full">
               <CardContent className="p-3.5">
                 <div className="text-[11px] text-muted-foreground">{item.title}</div>
-                <div className="mt-1 text-lg font-semibold num tracking-tight">
+                <div
+                  className={cn(
+                    "mt-1 text-lg font-semibold num tracking-tight transition-opacity",
+                    loading && data ? "opacity-70" : "opacity-100"
+                  )}
+                >
                   {loading && !data ? "…" : item.value}
                 </div>
                 {item.sub ? (

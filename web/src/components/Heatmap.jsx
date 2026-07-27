@@ -22,6 +22,12 @@ const DOW_LABELS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function Heatmap({ heatmap, locale = "zh", t, reducedMotion = false }) {
   const cells = heatmap?.cells || [];
+  // Animate cell entrance only on first mount; refresh should not re-stagger.
+  const enteredRef = React.useRef(false);
+  React.useEffect(() => {
+    enteredRef.current = true;
+  }, []);
+  const skipEnter = reducedMotion || enteredRef.current;
   const weekCount = useMemo(() => {
     if (!cells.length) return 0;
     return Math.max(...cells.map((c) => c.weekIndex)) + 1;
@@ -112,13 +118,11 @@ export function Heatmap({ heatmap, locale = "zh", t, reducedMotion = false }) {
                             LEVEL_CLASS[level] || LEVEL_CLASS[0]
                           )}
                           initial={
-                            reducedMotion
-                              ? false
-                              : { opacity: 0, scale: 0.6 }
+                            skipEnter ? false : { opacity: 0, scale: 0.6 }
                           }
                           animate={{ opacity: 1, scale: 1 }}
                           transition={
-                            reducedMotion
+                            skipEnter
                               ? { duration: 0 }
                               : {
                                   delay: Math.min(wi * 0.012 + di * 0.004, 0.6),

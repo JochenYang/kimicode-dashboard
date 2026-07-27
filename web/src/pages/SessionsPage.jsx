@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -68,6 +68,7 @@ export default function SessionsPage({ home, t, locale }) {
   const [workspace, setWorkspace] = useState("all");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [refreshFlash, setRefreshFlash] = useState(false);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
@@ -75,11 +76,24 @@ export default function SessionsPage({ home, t, locale }) {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [preview, setPreview] = useState(null); // { loading, error, data, row }
   const [previewOpen, setPreviewOpen] = useState(false);
+  const loadingRef = useRef(false);
+  const flashTimer = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
 
   const load = useCallback(
     async (opts = {}) => {
+      const manual = opts.manual === true;
+      if (loadingRef.current && manual) return;
+      loadingRef.current = true;
       setLoading(true);
+      setRefreshFlash(false);
       setError(null);
+      const started = Date.now();
       try {
         const params = new URLSearchParams();
         if (home) params.set("home", home);
@@ -89,10 +103,19 @@ export default function SessionsPage({ home, t, locale }) {
         const res = await fetchJson(`/api/sessions?${params.toString()}`);
         setData(res);
         setSelected(new Set());
+        if (manual) {
+          setRefreshFlash(true);
+          if (flashTimer.current) clearTimeout(flashTimer.current);
+          flashTimer.current = setTimeout(() => setRefreshFlash(false), 1200);
+        }
       } catch (e) {
         setData(null);
         setError(e.message);
       } finally {
+        const minMs = manual ? 320 : 0;
+        const wait = Math.max(0, minMs - (Date.now() - started));
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        loadingRef.current = false;
         setLoading(false);
       }
     },
@@ -327,11 +350,34 @@ export default function SessionsPage({ home, t, locale }) {
         </div>
         <Button
           variant="secondary"
-          onClick={() => load()}
+          onClick={() => load({ manual: true })}
           disabled={loading}
+          aria-busy={loading}
+          className={cn(
+            refreshFlash && !loading && "ring-1 ring-primary/50 text-primary"
+          )}
+          title={
+            loading
+              ? t("refreshing")
+              : refreshFlash
+                ? t("refreshed")
+                : t("refresh")
+          }
         >
-          {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-          {t("refresh")}
+          <RefreshCw
+            className={cn(
+              "h-4 w-4 shrink-0 text-current",
+              loading && "icon-spin"
+            )}
+            aria-hidden
+          />
+          <span>
+            {loading
+              ? t("refreshing")
+              : refreshFlash
+                ? t("refreshed")
+                : t("refresh")}
+          </span>
         </Button>
       </div>
 
