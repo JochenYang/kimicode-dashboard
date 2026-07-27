@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   root: "web",
   publicDir: "public-assets",
+  // Relative asset URLs so Tauri custom-protocol / file loads work (not only http://127.0.0.1).
+  base: "./",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "web/src"),
