@@ -1,21 +1,22 @@
 # Kimi Code 用量看板
 
-[![Version](https://img.shields.io/badge/version-1.2.0-0d9488)](./package.json)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-informational)](#桌面端-tauri)
-[![UI](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-38bdf8)](#界面技术栈)
-[![Desktop](https://img.shields.io/badge/desktop-Tauri%202-FFC131?logo=tauri&logoColor=black)](#桌面端-tauri)
-[![i18n](https://img.shields.io/badge/i18n-EN%20%7C%20中文-green)](./README.md)
-[![Privacy](https://img.shields.io/badge/privacy-仅本地-success)](#隐私)
-[![GitHub](https://img.shields.io/badge/GitHub-JochenYang%2Fkimicode--dashboard-181717?logo=github)](https://github.com/JochenYang/kimicode-dashboard)
-[![Stars](https://img.shields.io/github/stars/JochenYang/kimicode-dashboard?style=social)](https://github.com/JochenYang/kimicode-dashboard)
-
 [English](./README.md) | **简体中文**
 
 本地隐私安全的 [Kimi Code](https://www.kimi.com/) CLI 用量看板，默认读取 `~/.kimi-code`（Windows 为 `%USERPROFILE%\.kimi-code`）。
 
-**作者：** Jochen · **版本：** 1.2.0 · **协议：** [MIT](./LICENSE)
+**作者：** Jochen · **版本：** 1.2.0
+
+### 技术栈
+
+[![Node](https://img.shields.io/badge/NODE-18%2B-339933?style=flat-square&labelColor=1F2937&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/REACT-19-61DAFB?style=flat-square&labelColor=1F2937&logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/VITE-6-646CFF?style=flat-square&labelColor=1F2937&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Tailwind](https://img.shields.io/badge/TAILWIND-3-38BDF8?style=flat-square&labelColor=1F2937&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Rust](https://img.shields.io/badge/RUST-stable-DEA584?style=flat-square&labelColor=1F2937&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/TAURI-2-FFC131?style=flat-square&labelColor=1F2937&logo=tauri&logoColor=black)](#桌面端-tauri)
+
+[![Platform](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-6B7280?style=flat-square&labelColor=1F2937)](#桌面端-tauri)
+[![License](https://img.shields.io/badge/LICENSE-MIT-22C55E?style=flat-square&labelColor=1F2937)](./LICENSE)
 
 只统计 `usage.record` 中的**模型名、时间与 Token 数量**，以及 `config.toml` 内**受限**的模型别名映射。  
 **不会**展示或记录：提示词、回复正文、代码、API Key、Provider 凭据。
