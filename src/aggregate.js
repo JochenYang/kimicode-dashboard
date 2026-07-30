@@ -9,6 +9,8 @@ function aggregate(records, range = "30d", nowMs = Date.now()) {
   const totals = emptyTotals();
   const byDay = new Map();
   const byModel = new Map();
+  /** @type {Map<string, Map<string, number>>} day -> modelKey -> tokens */
+  const byDayModel = new Map();
 
   for (const r of filtered) {
     addTo(totals, r);
@@ -31,6 +33,18 @@ function aggregate(records, range = "30d", nowMs = Date.now()) {
     const m = byModel.get(mk);
     addTo(m, r);
     if (r.costEstimated) m.costEstimated = true;
+
+    if (!byDayModel.has(day)) byDayModel.set(day, new Map());
+    const dayModels = byDayModel.get(day);
+    if (!dayModels.has(mk)) dayModels.set(mk, 0);
+    dayModels.set(
+      mk,
+      dayModels.get(mk) +
+        (r.inputOther || 0) +
+        (r.output || 0) +
+        (r.inputCacheRead || 0) +
+        (r.inputCacheCreation || 0)
+    );
   }
 
   const totalInput = totals.inputOther + totals.inputCacheRead + totals.inputCacheCreation;
@@ -43,6 +57,8 @@ function aggregate(records, range = "30d", nowMs = Date.now()) {
   const models = [...byModel.values()]
     .map((m) => ({ ...m, cacheHitRate: hitRate(m) }))
     .sort((a, b) => b.totalTokens - a.totalTokens);
+
+  const dailyByModel = buildDailyByModel(daily, models, byDayModel);
 
   // Keep a generous recent window for UI pagination/scroll (not just top 50).
   const RECENT_LIMIT = 500;
@@ -72,6 +88,7 @@ function aggregate(records, range = "30d", nowMs = Date.now()) {
       totalTokens: totals.inputOther + totals.output + totals.inputCacheRead + totals.inputCacheCreation,
     },
     daily,
+    dailyByModel,
     models,
     recent,
     recentTotal: filtered.length,
@@ -121,6 +138,92 @@ function addTo(t, r) {
 function hitRate(t) {
   const denom = t.inputOther + t.inputCacheRead + t.inputCacheCreation;
   return denom > 0 ? t.inputCacheRead / denom : 0;
+}
+
+/** Max model series lines on the daily chart (plus optional "others"). */
+const DAILY_MODEL_SERIES = 6;
+
+/**
+ * Continuous calendar days from first..last activity, with top-N model token series.
+ * Fills missing days with zeros so the chart can draw a continuous curve.
+ */
+function buildDailyByModel(daily, models, byDayModel) {
+  if (!daily.length) {
+    return { dates: [], series: [], totals: [] };
+  }
+
+  const top = models.slice(0, DAILY_MODEL_SERIES);
+  const topKeys = new Set(top.map((m) => m.model || m.modelDisplay || "unknown"));
+  const hasOthers = models.length > top.length;
+
+  const start = parseDay(daily[0].date);
+  const end = parseDay(daily[daily.length - 1].date);
+  const spanDays = Math.round((end - start) / (24 * 3600_000)) + 1;
+
+  let dates;
+  if (spanDays <= 93) {
+    // Fill calendar gaps so the curve is continuous within ~3 months.
+    dates = [];
+    const cursor = new Date(start);
+    const endDate = new Date(end);
+    while (cursor.getTime() <= endDate.getTime()) {
+      dates.push(dayKey(cursor.getTime()));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  } else {
+    // Long "all" ranges: keep activity days only (still a smooth polyline).
+    dates = daily.map((d) => d.date);
+  }
+
+  const dayLookup = new Map(daily.map((d) => [d.date, d]));
+  const totals = dates.map((date) => {
+    const row = dayLookup.get(date);
+    return {
+      date,
+      totalTokens: row ? row.totalTokens || 0 : 0,
+      costUsd: row ? row.costUsd || 0 : 0,
+      requests: row ? row.requests || 0 : 0,
+      cacheHitRate: row ? row.cacheHitRate || 0 : 0,
+    };
+  });
+
+  const series = top.map((m) => {
+    const key = m.model || m.modelDisplay || "unknown";
+    return {
+      key,
+      label: m.model || m.modelDisplay || key,
+      modelDisplay: m.modelDisplay || m.model || key,
+      values: dates.map((date) => {
+        const dm = byDayModel.get(date);
+        return dm && dm.has(key) ? dm.get(key) : 0;
+      }),
+    };
+  });
+
+  if (hasOthers) {
+    series.push({
+      key: "__others__",
+      label: "others",
+      modelDisplay: "others",
+      isOthers: true,
+      values: dates.map((date) => {
+        const dm = byDayModel.get(date);
+        if (!dm) return 0;
+        let sum = 0;
+        for (const [k, v] of dm.entries()) {
+          if (!topKeys.has(k)) sum += v;
+        }
+        return sum;
+      }),
+    });
+  }
+
+  return { dates, series, totals };
+}
+
+function parseDay(yyyyMmDd) {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  return new Date(y, m - 1, d).getTime();
 }
 
 function dayKey(ms) {

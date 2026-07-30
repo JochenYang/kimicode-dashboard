@@ -100,10 +100,44 @@ pub struct RangeStats {
     pub range: String,
     pub totals: TotalsRow,
     pub daily: Vec<DailyRow>,
+    pub daily_by_model: DailyByModel,
     pub models: Vec<ModelRow>,
     pub recent: Vec<RecentRow>,
     pub recent_total: usize,
     pub recent_limit: usize,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyByModel {
+    pub dates: Vec<String>,
+    pub series: Vec<DailyModelSeries>,
+    pub totals: Vec<DailyTotalPoint>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyModelSeries {
+    pub key: String,
+    pub label: String,
+    pub model_display: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_others: bool,
+    pub values: Vec<u64>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyTotalPoint {
+    pub date: String,
+    pub total_tokens: u64,
+    pub cost_usd: f64,
+    pub requests: usize,
+    pub cache_hit_rate: f64,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -531,6 +565,7 @@ fn aggregate(records: &[UsageRecord], range: &str, now_ms: u64) -> RangeStats {
             range: range_label,
             totals: TotalsRow::default(),
             daily: vec![],
+            daily_by_model: DailyByModel::default(),
             models: vec![],
             recent: vec![],
             recent_total: 0,
@@ -541,6 +576,8 @@ fn aggregate(records: &[UsageRecord], range: &str, now_ms: u64) -> RangeStats {
     let mut totals = TotalsRow::default();
     let mut by_day: HashMap<String, TotalsRow> = HashMap::new();
     let mut by_model: HashMap<String, (ModelRow, TotalsRow)> = HashMap::new();
+    // day -> model -> tokens
+    let mut by_day_model: HashMap<String, HashMap<String, u64>> = HashMap::new();
 
     for r in &filtered {
         totals.add(r);
@@ -549,6 +586,14 @@ fn aggregate(records: &[UsageRecord], range: &str, now_ms: u64) -> RangeStats {
         day_totals.add(r);
 
         let mk = r.model.clone();
+        let tok = r.input_other + r.output + r.input_cache_read + r.input_cache_creation;
+        by_day_model
+            .entry(dk.clone())
+            .or_default()
+            .entry(mk.clone())
+            .and_modify(|v| *v += tok)
+            .or_insert(tok);
+
         let entry = by_model.entry(mk.clone()).or_insert_with(|| {
             let m = ModelRow {
                 model: mk.clone(),
@@ -594,6 +639,8 @@ fn aggregate(records: &[UsageRecord], range: &str, now_ms: u64) -> RangeStats {
     }).collect();
     models.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
 
+    let daily_by_model = build_daily_by_model(&daily, &models, &by_day_model);
+
     let recent_total = filtered.len();
     let recent_limit = 500;
     let recent: Vec<RecentRow> = filtered.iter().take(recent_limit).map(|r| RecentRow {
@@ -610,11 +657,132 @@ fn aggregate(records: &[UsageRecord], range: &str, now_ms: u64) -> RangeStats {
         range: range_label,
         totals,
         daily,
+        daily_by_model,
         models,
         recent,
         recent_total,
         recent_limit,
     }
+}
+
+const DAILY_MODEL_SERIES: usize = 6;
+
+fn build_daily_by_model(
+    daily: &[DailyRow],
+    models: &[ModelRow],
+    by_day_model: &HashMap<String, HashMap<String, u64>>,
+) -> DailyByModel {
+    if daily.is_empty() {
+        return DailyByModel::default();
+    }
+
+    let top: Vec<&ModelRow> = models.iter().take(DAILY_MODEL_SERIES).collect();
+    let top_keys: std::collections::HashSet<&str> =
+        top.iter().map(|m| m.model.as_str()).collect();
+    let has_others = models.len() > top.len();
+
+    let start = parse_day_local(&daily[0].date);
+    let end = parse_day_local(&daily[daily.len() - 1].date);
+    let span_days = ((end - start).num_days() + 1).max(1);
+
+    let dates: Vec<String> = if span_days <= 93 {
+        let mut out = Vec::new();
+        let mut cursor = start;
+        while cursor <= end {
+            out.push(format!(
+                "{:04}-{:02}-{:02}",
+                cursor.year(),
+                cursor.month(),
+                cursor.day()
+            ));
+            cursor += chrono::Duration::days(1);
+        }
+        out
+    } else {
+        daily.iter().map(|d| d.date.clone()).collect()
+    };
+
+    let day_lookup: HashMap<&str, &DailyRow> =
+        daily.iter().map(|d| (d.date.as_str(), d)).collect();
+
+    let totals: Vec<DailyTotalPoint> = dates
+        .iter()
+        .map(|date| {
+            if let Some(row) = day_lookup.get(date.as_str()) {
+                DailyTotalPoint {
+                    date: date.clone(),
+                    total_tokens: row.total_tokens,
+                    cost_usd: row.cost_usd,
+                    requests: row.requests,
+                    cache_hit_rate: row.cache_hit_rate,
+                }
+            } else {
+                DailyTotalPoint {
+                    date: date.clone(),
+                    total_tokens: 0,
+                    cost_usd: 0.0,
+                    requests: 0,
+                    cache_hit_rate: 0.0,
+                }
+            }
+        })
+        .collect();
+
+    let mut series: Vec<DailyModelSeries> = top
+        .iter()
+        .map(|m| {
+            let key = m.model.clone();
+            let values: Vec<u64> = dates
+                .iter()
+                .map(|date| {
+                    by_day_model
+                        .get(date)
+                        .and_then(|dm| dm.get(&key).copied())
+                        .unwrap_or(0)
+                })
+                .collect();
+            DailyModelSeries {
+                key: key.clone(),
+                label: key.clone(),
+                model_display: m.model_display.clone(),
+                is_others: false,
+                values,
+            }
+        })
+        .collect();
+
+    if has_others {
+        let values: Vec<u64> = dates
+            .iter()
+            .map(|date| {
+                let Some(dm) = by_day_model.get(date) else {
+                    return 0;
+                };
+                dm.iter()
+                    .filter(|(k, _)| !top_keys.contains(k.as_str()))
+                    .map(|(_, v)| *v)
+                    .sum()
+            })
+            .collect();
+        series.push(DailyModelSeries {
+            key: "__others__".into(),
+            label: "others".into(),
+            model_display: "others".into(),
+            is_others: true,
+            values,
+        });
+    }
+
+    DailyByModel {
+        dates,
+        series,
+        totals,
+    }
+}
+
+fn parse_day_local(yyyy_mm_dd: &str) -> chrono::NaiveDate {
+    chrono::NaiveDate::parse_from_str(yyyy_mm_dd, "%Y-%m-%d")
+        .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap())
 }
 
 impl TotalsRow {
