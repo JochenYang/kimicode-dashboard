@@ -419,6 +419,17 @@ export default function SessionsPage({ home, t, locale }) {
                           {w.root}
                         </span>
                       ) : null}
+                      {w.createdAt || w.lastOpenedAt ? (
+                        <span className="truncate text-[10px] opacity-60">
+                          {w.createdAt
+                            ? `${t("created")} ${fmtTime(Date.parse(w.createdAt), locale)}`
+                            : ""}
+                          {w.createdAt && w.lastOpenedAt ? " · " : ""}
+                          {w.lastOpenedAt
+                            ? `${t("lastOpened")} ${fmtTime(Date.parse(w.lastOpenedAt), locale)}`
+                            : ""}
+                        </span>
+                      ) : null}
                     </button>
                     {isEmpty ? (
                       <Button
@@ -574,6 +585,7 @@ export default function SessionsPage({ home, t, locale }) {
                       <TableHead>{t("workspace")}</TableHead>
                       <TableHead>{t("status")}</TableHead>
                       <TableHead className="text-right">{t("size")}</TableHead>
+                      <TableHead>{t("created")}</TableHead>
                       <TableHead>{t("updated")}</TableHead>
                       <TableHead className="text-right">{t("actions")}</TableHead>
                     </TableRow>
@@ -582,7 +594,7 @@ export default function SessionsPage({ home, t, locale }) {
                     {sessions.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={7}
+                          colSpan={8}
                           className="py-10 text-center text-muted-foreground"
                         >
                           {loading ? t("scanning") : t("noSessions")}
@@ -654,7 +666,20 @@ export default function SessionsPage({ home, t, locale }) {
                               )}
                             </TableCell>
                             <TableCell className="text-right num text-muted-foreground">
-                              {fmtBytes(row.bytes)}
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span>{fmtBytes(row.bytes)}</span>
+                                {row.files != null ? (
+                                  <span className="text-[10px] opacity-75">
+                                    {fmtInt(row.files, locale)} {t("files")}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </TableCell>
+                            <TableCell className="num whitespace-nowrap text-muted-foreground">
+                              {fmtTime(
+                                row.createdAt ? Date.parse(row.createdAt) : null,
+                                locale
+                              )}
                             </TableCell>
                             <TableCell className="num whitespace-nowrap text-muted-foreground">
                               {fmtTime(
@@ -812,6 +837,7 @@ export default function SessionsPage({ home, t, locale }) {
         <DialogContent
           className="gap-0 p-0 w-[min(40rem,calc(100vw-2rem))] max-w-2xl"
           showClose
+          closeLabel={t("close")}
         >
           <div className="space-y-2 border-b border-border/60 p-5 pr-12">
             <DialogHeader className="pr-0">
@@ -826,6 +852,12 @@ export default function SessionsPage({ home, t, locale }) {
                 <div className="mt-0.5 break-all font-mono opacity-80">
                   {preview.row.id}
                 </div>
+                {preview.data?.messageCount != null ? (
+                  <div className="mt-0.5 num">
+                    {fmtInt(preview.data.messageCount, locale)}{" "}
+                    {t("messages")}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

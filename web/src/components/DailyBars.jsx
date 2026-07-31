@@ -84,15 +84,8 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false }) {
     };
   }, [daily, dailyByModel]);
 
-  if (!chart) {
-    return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        {t("noData")}
-      </div>
-    );
-  }
-
-  const { dates, totals, series } = chart;
+  // All hooks must run unconditionally — do NOT early-return before them.
+  const { dates = [], totals = [], series = [] } = chart || {};
   const n = dates.length;
   const W = 640;
   const H = 200;
@@ -100,21 +93,50 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false }) {
   const innerW = W - pad.left - pad.right;
   const innerH = H - pad.top - pad.bottom;
 
-  const visibleSeries = series.filter((s) => !hidden.has(s.key));
-  const maxVal = Math.max(
-    1,
-    ...totals.map((t) => t.totalTokens || 0),
-    ...visibleSeries.flatMap((s) => s.values || [])
+  // Geometry is memoized so hover updates (setHover per mousemove) do not
+  // recompute path curves for hundreds of days × series.
+  const visibleSeries = useMemo(
+    () => series.filter((s) => !hidden.has(s.key)),
+    [series, hidden]
   );
 
-  const xAt = (i) =>
-    pad.left + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
-  const yAt = (v) => pad.top + innerH - (v / maxVal) * innerH;
+  const maxVal = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...totals.map((t) => t.totalTokens || 0),
+        ...visibleSeries.flatMap((s) => s.values || [])
+      ),
+    [totals, visibleSeries]
+  );
 
-  const totalPoints = totals.map((row, i) => ({
-    x: xAt(i),
-    y: yAt(row.totalTokens || 0),
-  }));
+  const geometry = useMemo(() => {
+    const xAt = (i) =>
+      pad.left + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+    const yAt = (v) => pad.top + innerH - (v / maxVal) * innerH;
+    const totalPoints = totals.map((row, i) => ({
+      x: xAt(i),
+      y: yAt(row.totalTokens || 0),
+    }));
+    const modelPaths = visibleSeries.map((s) => {
+      const pts = (s.values || []).map((v, i) => ({
+        x: xAt(i),
+        y: yAt(v || 0),
+      }));
+      return smoothPath(pts);
+    });
+    return { xAt, yAt, totalPoints, modelPaths };
+  }, [n, maxVal, totals, visibleSeries]);
+
+  const { xAt, yAt, totalPoints, modelPaths } = geometry;
+
+  if (!chart) {
+    return (
+      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+        {t("noData")}
+      </div>
+    );
+  }
 
   const labelStep = Math.max(1, Math.ceil(n / 8));
 
@@ -126,6 +148,26 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false }) {
     const ratio = Math.min(1, Math.max(0, x / rect.width));
     const idx = Math.round(ratio * (n - 1));
     setHover(idx);
+  };
+
+  // Keyboard navigation: ←/→ move the readout, Enter/Home/Escape reset.
+  const onKeyDown = (e) => {
+    if (n === 0) return;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      setHover((h) => (h == null ? n - 1 : Math.max(0, h - 1)));
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      setHover((h) => (h == null ? 0 : Math.min(n - 1, h + 1)));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setHover(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setHover(n - 1);
+    } else if (e.key === "Escape" || e.key === "Enter") {
+      setHover(null);
+    }
   };
 
   const toggle = (key) => {
@@ -198,8 +240,12 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false }) {
       <div
         ref={wrapRef}
         className="relative w-full select-none"
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
+        tabIndex={0}
+        role="group"
+        aria-label={`${t("dailyTrend")}${tip ? ` — ${tip.date}` : ""}`}
+        onPointerMove={onMove}
+        onPointerLeave={() => setHover(null)}
+        onKeyDown={onKeyDown}
       >
         <svg
           viewBox={`0 0 ${W} ${H}`}
@@ -259,14 +305,11 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false }) {
               s.isOthers
                 ? SERIES_COLORS[SERIES_COLORS.length - 1]
                 : SERIES_COLORS[si % SERIES_COLORS.length];
-            const pts = (s.values || []).map((v, i) => ({
-              x: xAt(i),
-              y: yAt(v || 0),
-            }));
+            const pathIdx = visibleSeries.findIndex((v) => v.key === s.key);
             return (
               <path
                 key={s.key}
-                d={smoothPath(pts)}
+                d={modelPaths[pathIdx] || ""}
                 fill="none"
                 stroke={color}
                 strokeWidth={1.75}
@@ -322,6 +365,8 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false }) {
         {tip && hi != null && (
           <div
             className="pointer-events-none absolute z-20 min-w-[168px] max-w-[260px] rounded-lg border border-border px-2.5 py-2 text-xs text-foreground shadow-xl"
+            role="status"
+            aria-live="polite"
             style={{
               left: `${(hi / Math.max(n - 1, 1)) * 100}%`,
               top: 8,

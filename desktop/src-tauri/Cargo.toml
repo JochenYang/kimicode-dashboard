@@ -1,6 +1,6 @@
 [package]
 name = "kimicode-dashboard"
-version = "1.3.0"
+version = "1.4.0"
 description = "Kimi Code Usage Dashboard - Local Token & Session Stats"
 authors = ["Jochen"]
 edition = "2021"

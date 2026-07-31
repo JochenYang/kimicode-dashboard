@@ -72,7 +72,16 @@ function useLocale() {
   const changeLocale = (next) => {
     setLocale(next);
     localStorage.setItem("kcd_locale", next);
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = next === "zh" ? "zh-CN" : "en";
+    }
   };
+  // Sync <html lang> with the active locale (incl. initial render).
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+    }
+  }, [locale]);
   return { locale, t, changeLocale };
 }
 
@@ -206,6 +215,18 @@ export default function App() {
   const rangeLabelKey =
     RANGE_KEYS.find((r) => r.value === range)?.labelKey || "rangeAll";
 
+  // Data freshness: time since last scan (backend caches up to 15s).
+  const scannedAgo = useMemo(() => {
+    const at = Number(data?.scannedAt) || 0;
+    if (!at) return "—";
+    const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
+    if (secs < 60) return t("scannedAgoSec", {}).replace("{s}", String(secs));
+    const mins = Math.round(secs / 60);
+    if (mins < 60) return t("scannedAgoMin").replace("{m}", String(mins));
+    const hrs = Math.round(mins / 60);
+    return t("scannedAgoHour").replace("{h}", String(hrs));
+  }, [data?.scannedAt, t]);
+
   const modelOptions = useMemo(() => {
     // Prefer full history roster so filter is never limited to today's models
     if (allModels.length) {
@@ -321,7 +342,7 @@ export default function App() {
               </h1>
               <span className="mb-0.5 shrink-0 text-[11px] leading-none text-muted-foreground/85 tabular-nums">
                 {fill(t("appVersionBy"), {
-                  version: "1.3.0",
+                  version: "1.4.0",
                   author: "Jochen",
                 })}
               </span>
@@ -529,31 +550,7 @@ export default function App() {
         })}
       </div>
 
-      {/* Heatmap */}
-      <motion.div
-        custom={3}
-        initial={reduceMotion || entered.current ? false : "hidden"}
-        animate="show"
-        variants={fadeUp}
-        className="mb-5"
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("heatmap")}</CardTitle>
-            <CardDescription>{t("heatmapHint")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Heatmap
-              heatmap={heatmap}
-              locale={locale}
-              t={t}
-              reducedMotion={!!reduceMotion}
-            />
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* KPI strip */}
+      {/* KPI strip — first screen before heatmap */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
         {kpiItems.map((item, i) => (
           <motion.div
@@ -584,6 +581,30 @@ export default function App() {
           </motion.div>
         ))}
       </div>
+
+      {/* Heatmap */}
+      <motion.div
+        custom={3}
+        initial={reduceMotion || entered.current ? false : "hidden"}
+        animate="show"
+        variants={fadeUp}
+        className="mb-5"
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("heatmap")}</CardTitle>
+            <CardDescription>{t("heatmapHint")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Heatmap
+              heatmap={heatmap}
+              locale={locale}
+              t={t}
+              reducedMotion={!!reduceMotion}
+            />
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* Charts + models */}
       <div className="mb-5 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
@@ -657,6 +678,15 @@ export default function App() {
                       <TableRow
                         key={m.model}
                         className="cursor-pointer"
+                        tabIndex={0}
+                        role="button"
+                        aria-label={fill(t("viewModelHistory"), { model: modelLabel(m) })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openModelHistory(m.model);
+                          }
+                        }}
                         onClick={() => openModelHistory(m.model)}
                       >
                         <TableCell className="max-w-[240px]">
@@ -726,6 +756,15 @@ export default function App() {
                     <TableRow
                       key={`all-${m.model}`}
                       className="cursor-pointer"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={fill(t("viewModelHistory"), { model: modelLabel(m) })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openModelHistory(m.model);
+                        }
+                      }}
                       onClick={() => openModelHistory(m.model)}
                     >
                       <TableCell className="max-w-[280px]">
@@ -826,6 +865,7 @@ export default function App() {
                 <TableRow>
                   <TableHead className="w-[170px]">{t("time")}</TableHead>
                   <TableHead>{t("model")}</TableHead>
+                  <TableHead>{t("session")}</TableHead>
                   <TableHead className="text-right">{t("inputOther")}</TableHead>
                   <TableHead className="text-right">{t("output")}</TableHead>
                   <TableHead className="text-right">{t("cacheRead")}</TableHead>
@@ -837,7 +877,7 @@ export default function App() {
                 {pageSlice.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="text-center text-muted-foreground"
                     >
                       {t("noData")}
@@ -849,7 +889,7 @@ export default function App() {
                       <TableCell className="num whitespace-nowrap text-muted-foreground">
                         {fmtTime(r.time, locale)}
                       </TableCell>
-                      <TableCell className="max-w-[240px]">
+                      <TableCell className="max-w-[200px]">
                         <div className="flex min-w-0 flex-col gap-1">
                           <span className="truncate font-medium" title={r.model}>
                             {modelLabel(r)}
@@ -865,6 +905,24 @@ export default function App() {
                             ) : null}
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell className="max-w-[160px]">
+                        <span
+                          className="block truncate text-[11px] text-muted-foreground"
+                          title={
+                            typeof r.sessionHint === "string"
+                              ? r.sessionHint
+                              : [r.sessionHint?.workspace, r.sessionHint?.session]
+                                  .filter(Boolean)
+                                  .join("/") || "—"
+                          }
+                        >
+                          {typeof r.sessionHint === "string"
+                            ? r.sessionHint
+                            : [r.sessionHint?.workspace, r.sessionHint?.session]
+                                .filter(Boolean)
+                                .join("/") || "—"}
+                        </span>
                       </TableCell>
                       <TableCell className="text-right num">
                         {fmtTokens(r.inputOther)}
@@ -952,13 +1010,24 @@ export default function App() {
       <footer className="text-xs text-muted-foreground">
         {[
           `${t("filesScanned")}: ${meta.filesScanned ?? "—"}`,
+          `${t("linesScanned")}: ${meta.linesSeen ?? "—"}`,
           `${t("records")}: ${meta.recordCount ?? "—"}`,
+          `${t("modelAliases")}: ${modelMap.aliasCount ?? 0}`,
+          (meta.errors && meta.errors.length > 0
+            ? `${t("parseErrors")}: ${meta.errors.length}`
+            : null),
           data?.scannedAt
-            ? `${t("lastScan")}: ${fmtTime(data.scannedAt, locale)}`
+            ? `${t("lastScan")}: ${fmtTime(data.scannedAt, locale)} (${scannedAgo})`
             : null,
         ]
           .filter(Boolean)
           .join(" · ")}
+        {meta.errors && meta.errors.length > 0 ? (
+          <div className="mt-1 max-w-[720px] truncate text-amber-400/90" title={meta.errors.join("\n")}>
+            {meta.errors[0]}
+            {meta.errors.length > 1 ? ` (+${meta.errors.length - 1})` : ""}
+          </div>
+        ) : null}
       </footer>
       </>
       ) : null}

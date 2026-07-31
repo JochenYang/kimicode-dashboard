@@ -200,7 +200,17 @@ pub struct RecentRow {
     pub cost_usd: f64,
     pub cost_estimated: bool,
     pub price_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_hint: Option<SessionHint>,
     pub from_env: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionHint {
+    pub workspace: Option<String>,
+    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -356,6 +366,7 @@ pub struct UsageRecord {
     pub model_display: String,
     pub provider: Option<String>,
     pub from_env: bool,
+    pub session_hint: Option<SessionHint>,
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +534,7 @@ fn scan_usage(home: &Path) -> (Vec<UsageRecord>, ScanMeta) {
             let bare = model_raw.rsplit_once('/').map(|x| x.1).unwrap_or(&model_raw);
             let (cost, est) = cost_for_usage(input_other, output, cache_read, cache_create, &model_raw);
             let (pid, _ch, _ip, _op, _) = match_price(&model_raw);
+            let hint = session_hint_from_path(p, &root);
 
             records.push(UsageRecord {
                 time,
@@ -538,6 +550,7 @@ fn scan_usage(home: &Path) -> (Vec<UsageRecord>, ScanMeta) {
                 cost_usd: cost,
                 cost_estimated: est,
                 price_id: pid,
+                session_hint: hint,
             });
         }
     }
@@ -549,6 +562,26 @@ fn scan_usage(home: &Path) -> (Vec<UsageRecord>, ScanMeta) {
         home: home.to_string_lossy().to_string(),
         sessions_root: root.to_string_lossy().to_string(),
         errors: errors.into_iter().take(20).collect(),
+    })
+}
+
+/// Basename chain hint: sessions/<workspace>/session_<id>/agents/<agent>/wire.jsonl
+fn session_hint_from_path(p: &Path, sessions_root: &Path) -> Option<SessionHint> {
+    let rel = p.strip_prefix(sessions_root).ok()?;
+    let parts: Vec<&str> = rel
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => Some(s.to_str().unwrap_or("")),
+            _ => None,
+        })
+        .collect();
+    if parts.is_empty() {
+        return None;
+    }
+    Some(SessionHint {
+        workspace: parts.first().map(|s| s.to_string()),
+        session: parts.get(1).map(|s| s.to_string()),
+        agent: parts.get(3).or_else(|| parts.get(2)).map(|s| s.to_string()),
     })
 }
 
@@ -650,7 +683,7 @@ fn aggregate(records: &[UsageRecord], range: &str, now_ms: u64) -> RangeStats {
         input_cache_read: r.input_cache_read, input_cache_creation: r.input_cache_creation,
         total_tokens: r.input_other + r.output + r.input_cache_read + r.input_cache_creation,
         cost_usd: r.cost_usd, cost_estimated: r.cost_estimated,
-        price_id: r.price_id.clone(), from_env: r.from_env,
+        price_id: r.price_id.clone(), session_hint: r.session_hint.clone(), from_env: r.from_env,
     }).collect();
 
     RangeStats {
@@ -1006,9 +1039,12 @@ fn list_sessions_cmd(home: &Path, status: &str, workspace_filter: Option<String>
         let arch_list = if status == "active" { vec![] } else { arch_all.clone() };
 
         let empty = active_all.is_empty() && arch_all.is_empty();
+        // created_at / last_opened_at from workspaces.json when present
+        let created_at = meta.and_then(|m| m.get("createdAt").and_then(|v| v.as_str()).map(|s| s.to_string()));
+        let last_opened_at = meta.and_then(|m| m.get("lastOpenedAt").and_then(|v| v.as_str()).map(|s| s.to_string()));
         workspaces.push(WorkspaceRow {
             id: wid.clone(), name, root: root_path,
-            created_at: None, last_opened_at: None,
+            created_at, last_opened_at,
             active_count: active_all.len(), archived_count: arch_all.len(), empty,
         });
         all_sessions.extend(active_list);
@@ -1408,17 +1444,19 @@ fn get_summary(home_override: Option<String>, range: Option<String>, refresh: Op
         range_totals.insert(r_k.to_string(), s.totals);
     }
 
-    let default_model = None;
+    let (model_map_info, _aliases) = load_model_map(&home);
+    let default_model = model_map_info.default_model.clone();
     let env_model = std::env::var("KIMI_MODEL_NAME").ok().map(|name| EnvModelInfo {
         name, provider: std::env::var("KIMI_MODEL_PROVIDER").ok(), model: std::env::var("KIMI_MODEL_ID").ok(),
     });
+    let alias_count = model_map_info.alias_count;
 
     SummaryResult {
         home: home.to_string_lossy().to_string(),
         valid: is_kimi_home(&home),
         scanned_at: now_ms,
         meta,
-        model_map: ModelMapInfo { default_model, env_model, alias_count: 0 },
+        model_map: ModelMapInfo { default_model, env_model, alias_count },
         range: r,
         stats,
         heatmap,
@@ -1426,6 +1464,68 @@ fn get_summary(home_override: Option<String>, range: Option<String>, refresh: Op
         all_model_count,
         range_totals,
     }
+}
+
+/// Restricted config.toml model-map reader — identity fields only.
+/// Secret-looking lines (api_key/token/secret/password/...) are stripped
+/// before parsing; no credentials are ever exposed.
+fn load_model_map(home: &Path) -> (ModelMapInfo, Vec<(String, String)>) {
+    let mut info = ModelMapInfo { default_model: None, env_model: None, alias_count: 0 };
+    let mut aliases = Vec::new();
+
+    let cfg = home.join("config.toml");
+    if !cfg.exists() {
+        return (info, aliases);
+    }
+    let Ok(content) = fs::read_to_string(&cfg) else {
+        return (info, aliases);
+    };
+
+    // Strip secret-like lines before parsing (defense in depth).
+    let safe: Vec<&str> = content
+        .lines()
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty()
+                && !Regex::new(r"^(api[_-]?key|token|secret|password|authorization)\s*=")
+                    .unwrap()
+                    .is_match(t)
+                && !Regex::new(r"^[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)\s*=")
+                    .unwrap()
+                    .is_match(t)
+        })
+        .collect();
+    let safe_text = safe.join("\n");
+
+    // default_model = "..."
+    if let Some(caps) = Regex::new(r#"(?m)^\s*default_model\s*=\s*"([^"]+)""#)
+        .unwrap()
+        .captures(&safe_text)
+    {
+        info.default_model = Some(caps.get(1).unwrap().as_str().to_string());
+    }
+
+    // [models."provider/name"] sections — count only.
+    let section_re = Regex::new(r#"(?m)^\s*\[models\."([^"]+)"\]"#).unwrap();
+    for caps in section_re.captures_iter(&safe_text) {
+        let alias = caps.get(1).unwrap().as_str().to_string();
+        let mut provider = None;
+        let mut model = None;
+        // read following lines until next section header
+        let after = &safe_text[caps.get(0).unwrap().end()..];
+        let block_end = after.find("\n[").unwrap_or(after.len());
+        let block = &after[..block_end];
+        if let Some(m) = Regex::new(r#"(?m)^\s*provider\s*=\s*"([^"]*)""#).unwrap().captures(block) {
+            provider = Some(m.get(1).unwrap().as_str().to_string());
+        }
+        if let Some(m) = Regex::new(r#"(?m)^\s*model\s*=\s*"([^"]*)""#).unwrap().captures(block) {
+            model = Some(m.get(1).unwrap().as_str().to_string());
+        }
+        aliases.push((alias, format!("{:?}/{:?}", provider, model)));
+    }
+    info.alias_count = aliases.len();
+
+    (info, aliases)
 }
 
 #[tauri::command]
@@ -1485,4 +1585,117 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// ---------------------------------------------------------------------------
+// Tests — desktop logic parity with the Node implementation
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_home_with_wire(
+        tag: &str,
+        workspace: &str,
+        session: &str,
+        agent: &str,
+        record: &str,
+    ) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("kcd_test_{}_{}", std::process::id(), tag));
+        let wire = if agent.is_empty() {
+            dir.join("sessions").join(workspace).join(session).join("wire.jsonl")
+        } else {
+            dir.join("sessions")
+                .join(workspace)
+                .join(session)
+                .join("agents")
+                .join(agent)
+                .join("wire.jsonl")
+        };
+        fs::create_dir_all(wire.parent().unwrap()).unwrap();
+        fs::write(&wire, record).unwrap();
+        dir
+    }
+
+    fn usage_line(model: &str, time_ms: u64, input_other: u64, output: u64) -> String {
+        format!(
+            "{{\"type\":\"usage.record\",\"usageScope\":\"turn\",\"model\":\"{}\",\"time\":{},\"usage\":{{\"inputOther\":{},\"output\":{},\"inputCacheRead\":0,\"inputCacheCreation\":0}}}}",
+            model, time_ms, input_other, output
+        )
+    }
+
+    #[test]
+    fn session_hint_from_path_parses_agent_wire() {
+        let root = PathBuf::from("/home/u/.kimi-code/sessions");
+        let p = root.join("wd_demo").join("session_abc123def456").join("agents").join("main").join("wire.jsonl");
+        let h = session_hint_from_path(&p, &root).expect("hint");
+        assert_eq!(h.workspace.as_deref(), Some("wd_demo"));
+        assert_eq!(h.session.as_deref(), Some("session_abc123def456"));
+        assert_eq!(h.agent.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn scan_usage_reads_turn_records_with_hint() {
+        let now_ms = 1_700_000_000_000u64;
+        let home = mk_home_with_wire(
+            "turn",
+            "wd_demo",
+            "session_abc123def456",
+            "main",
+            &usage_line("kimi-k2.6", now_ms, 100, 50),
+        );
+        let (records, meta) = scan_usage(&home);
+        let _ = fs::remove_dir_all(&home);
+        assert_eq!(records.len(), 1);
+        assert_eq!(meta.record_count, 1);
+        assert!(meta.lines_seen >= 1);
+        let r = &records[0];
+        assert_eq!(r.model, "kimi-k2.6");
+        assert_eq!(r.input_other, 100);
+        assert_eq!(r.output, 50);
+        let h = r.session_hint.as_ref().expect("hint");
+        assert_eq!(h.workspace.as_deref(), Some("wd_demo"));
+        assert_eq!(h.session.as_deref(), Some("session_abc123def456"));
+        assert_eq!(h.agent.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn scan_usage_ignores_non_turn_records() {
+        let now_ms = 1_700_000_000_000u64;
+        let line = "{\"type\":\"usage.record\",\"usageScope\":\"session\",\"model\":\"kimi-k2.6\",\"time\":".to_string()
+            + &now_ms.to_string()
+            + ",\"usage\":{\"inputOther\":999,\"output\":0,\"inputCacheRead\":0,\"inputCacheCreation\":0}}";
+        let home = mk_home_with_wire("scope", "wd_demo", "session_abc123def456", "", &line);
+        let (records, _) = scan_usage(&home);
+        let _ = fs::remove_dir_all(&home);
+        assert_eq!(records.len(), 0, "session-scope records must be skipped");
+    }
+
+    #[test]
+    fn aggregate_daily_by_model_is_continuous() {
+        let now_ms = 1_700_000_000_000u64;
+        let home = mk_home_with_wire(
+            "agg",
+            "wd_demo",
+            "session_abc123def456",
+            "main",
+            &format!(
+                "{}\n{}",
+                usage_line("kimi-k3", now_ms - 2 * 86400_000, 1000, 100),
+                usage_line("kimi-k2.6", now_ms, 500, 50)
+            ),
+        );
+        let (records, _) = scan_usage(&home);
+        let _ = fs::remove_dir_all(&home);
+        let s = aggregate(&records, "all", now_ms);
+        let d = &s.daily_by_model;
+        assert!(d.dates.len() >= 3, "gap days must be filled");
+        assert!(d.dates.iter().any(|x| x == &day_key(now_ms - 2 * 86400_000)));
+        assert!(d.series.iter().any(|x| x.key == "kimi-k3"));
+        assert!(d.series.iter().any(|x| x.key == "kimi-k2.6"));
+        // total of the two active days
+        let sum: u64 = d.totals.iter().map(|t| t.total_tokens).sum();
+        assert_eq!(sum, 1100 + 550);
+    }
 }
