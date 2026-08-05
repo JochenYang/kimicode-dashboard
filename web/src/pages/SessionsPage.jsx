@@ -5,10 +5,12 @@ import {
   FolderOpen,
   Loader2,
   RefreshCw,
+  Search,
   Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -214,9 +216,21 @@ export default function SessionsPage({ home, t, locale }) {
 
   const rowKey = (row) => `${row.workspaceId}/${row.id}`;
 
+  // Search filter: title / id / workDir / workspaceId
+  const [query, setQuery] = useState("");
+  const filteredSessions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sessions;
+    return sessions.filter((s) =>
+      [s.title, s.id, s.workDir, s.workspaceId].some((v) =>
+        v ? String(v).toLowerCase().includes(q) : false
+      )
+    );
+  }, [sessions, query]);
+
   const allKeys = useMemo(
-    () => sessions.map((s) => rowKey(s)),
-    [sessions]
+    () => filteredSessions.map((s) => rowKey(s)),
+    [filteredSessions]
   );
 
   const allSelected =
@@ -472,11 +486,22 @@ export default function SessionsPage({ home, t, locale }) {
               </TabsList>
             </Tabs>
             <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex shrink-0 items-center overflow-visible">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("searchPlaceholder")}
+                  aria-label={t("searchSessions")}
+                  className="h-8 w-[180px] pl-8 pr-2 text-xs sm:w-[220px]"
+                />
+              </div>
               {sessions.length > 0 ? (
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={toggleSelectAll}
+                  disabled={!filteredSessions.length}
                 >
                   {allSelected ? t("deselectAll") : t("selectAll")}
                 </Button>
@@ -555,8 +580,11 @@ export default function SessionsPage({ home, t, locale }) {
               <CardDescription>
                 {t("sessionsInView").replace(
                   "{n}",
-                  String(sessions.length)
+                  String(filteredSessions.length)
                 )}
+                {query.trim()
+                  ? ` · ${t("searchResults").replace("{n}", String(filteredSessions.length))}`
+                  : ""}
                 {workspace !== "all"
                   ? ` · ${t("isolatedToWorkspace")}`
                   : ""}
@@ -567,7 +595,7 @@ export default function SessionsPage({ home, t, locale }) {
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow>
-                      <TableHead className="w-10">
+                      <TableHead className="sticky left-0 z-20 w-10 bg-card">
                         <input
                           ref={(el) => {
                             if (el) el.indeterminate = someSelected;
@@ -587,27 +615,33 @@ export default function SessionsPage({ home, t, locale }) {
                       <TableHead className="text-right">{t("size")}</TableHead>
                       <TableHead>{t("created")}</TableHead>
                       <TableHead>{t("updated")}</TableHead>
-                      <TableHead className="text-right">{t("actions")}</TableHead>
+                      <TableHead className="sticky right-0 z-20 bg-card text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.45)]">
+                        {t("actions")}
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sessions.length === 0 ? (
+                    {filteredSessions.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={8}
                           className="py-10 text-center text-muted-foreground"
                         >
-                          {loading ? t("scanning") : t("noSessions")}
+                          {loading
+                            ? t("scanning")
+                            : query.trim()
+                              ? t("noMatches")
+                              : t("noSessions")}
                         </TableCell>
                       </TableRow>
                     ) : (
-                      sessions.map((row) => {
+                      filteredSessions.map((row) => {
                         const key = `${row.workspaceId}/${row.id}`;
                         const ws = workspaceMap.get(row.workspaceId);
                         const busy = busyId === key;
                         return (
                           <TableRow key={key}>
-                            <TableCell>
+                            <TableCell className="sticky left-0 z-10 bg-card">
                               <input
                                 type="checkbox"
                                 className="h-4 w-4 accent-[hsl(var(--primary))]"
@@ -689,7 +723,7 @@ export default function SessionsPage({ home, t, locale }) {
                                 locale
                               )}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="sticky right-0 z-10 bg-card text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.45)]">
                               <div className="flex justify-end gap-1">
                                 {row.status === "active" ? (
                                   <Button
