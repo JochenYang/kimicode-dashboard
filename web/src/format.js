@@ -36,3 +36,16 @@ export function fmtTime(ms, locale = "en") {
     hour12: false,
   });
 }
+
+/** Compact table timestamp (no seconds) — fits narrow columns. */
+export function fmtTimeShort(ms, locale = "en") {
+  if (!ms) return "—";
+  return new Date(ms).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+    year: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}

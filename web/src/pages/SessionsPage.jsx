@@ -42,7 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { fmtInt, fmtTime } from "@/format";
+import { fmtInt, fmtTime, fmtTimeShort } from "@/format";
 import {
   archiveSession,
   deleteSession,
@@ -360,7 +360,7 @@ export default function SessionsPage({ home, t, locale }) {
       ) : null}
 
       {/* Shared panel height so left rail matches right table area; both scroll inside */}
-      <div className="grid gap-3 lg:grid-cols-[260px_1fr] lg:h-[min(640px,calc(100vh-220px))] lg:min-h-[480px]">
+      <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)] lg:h-[min(640px,calc(100vh-220px))] lg:min-h-[480px]">
         <Card className="flex min-h-0 flex-col overflow-hidden">
           <CardHeader className="shrink-0 pb-2">
             <CardTitle className="text-sm">{t("workspaces")}</CardTitle>
@@ -472,6 +472,7 @@ export default function SessionsPage({ home, t, locale }) {
         </Card>
 
         <div className="flex min-h-0 flex-col space-y-3 overflow-hidden">
+          {/* Toolbar row 1: status tabs + workspace select */}
           <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <Tabs
               value={status}
@@ -485,89 +486,91 @@ export default function SessionsPage({ home, t, locale }) {
                 <TabsTrigger value="all">{t("statusAll")}</TabsTrigger>
               </TabsList>
             </Tabs>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex shrink-0 items-center overflow-visible">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t("searchPlaceholder")}
-                  aria-label={t("searchSessions")}
-                  className="h-8 w-[180px] pl-8 pr-2 text-xs sm:w-[220px]"
-                />
-              </div>
-              {sessions.length > 0 ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={toggleSelectAll}
-                  disabled={!filteredSessions.length}
-                >
-                  {allSelected ? t("deselectAll") : t("selectAll")}
-                </Button>
-              ) : null}
-              {selected.size > 0 ? (
-                <>
-                  <span className="text-xs text-muted-foreground">
-                    {t("selectedCount").replace("{n}", String(selected.size))}
-                  </span>
-                  {status !== "archived" ? (
-                    <Button size="sm" variant="secondary" onClick={bulkArchive}>
-                      <Archive className="h-3.5 w-3.5" />
-                      {t("archive")}
-                    </Button>
-                  ) : null}
-                  {status !== "active" ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={async () => {
-                        const rows = sessions.filter(
-                          (s) =>
-                            selected.has(rowKey(s)) && s.status === "archived"
-                        );
-                        for (const row of rows) {
-                          try {
-                            await unarchiveSession(
-                              home,
-                              row.workspaceId,
-                              row.id
-                            );
-                          } catch (e) {
-                            setError(e.message);
-                            break;
-                          }
-                        }
-                        await load();
-                      }}
-                    >
-                      <ArchiveRestore className="h-3.5 w-3.5" />
-                      {t("unarchive")}
-                    </Button>
-                  ) : null}
-                  <Button size="sm" variant="secondary" onClick={bulkDelete}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                    {t("delete")}
-                  </Button>
-                </>
-              ) : null}
-              <Select
-                value={workspace}
-                onValueChange={setWorkspace}
-              >
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder={t("workspaces")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("allWorkspaces")}</SelectItem>
-                  {workspaces.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.name || w.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <Select
+              value={workspace}
+              onValueChange={setWorkspace}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder={t("workspaces")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("allWorkspaces")}</SelectItem>
+                {workspaces.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name || w.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Toolbar row 2: search + bulk actions (never squeezes row 1) */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <div className="relative flex w-full min-w-[140px] items-center overflow-visible sm:w-[220px] sm:flex-none">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("searchPlaceholder")}
+                aria-label={t("searchSessions")}
+                className="h-8 w-full pl-8 pr-2 text-xs"
+              />
             </div>
+            {sessions.length > 0 ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={toggleSelectAll}
+                disabled={!filteredSessions.length}
+              >
+                {allSelected ? t("deselectAll") : t("selectAll")}
+              </Button>
+            ) : null}
+            {selected.size > 0 ? (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  {t("selectedCount").replace("{n}", String(selected.size))}
+                </span>
+                {status !== "archived" ? (
+                  <Button size="sm" variant="secondary" onClick={bulkArchive}>
+                    <Archive className="h-3.5 w-3.5" />
+                    {t("archive")}
+                  </Button>
+                ) : null}
+                {status !== "active" ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={async () => {
+                      const rows = sessions.filter(
+                        (s) =>
+                          selected.has(rowKey(s)) && s.status === "archived"
+                      );
+                      for (const row of rows) {
+                        try {
+                          await unarchiveSession(
+                            home,
+                            row.workspaceId,
+                            row.id
+                          );
+                        } catch (e) {
+                          setError(e.message);
+                          break;
+                        }
+                      }
+                      await load();
+                    }}
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5" />
+                    {t("unarchive")}
+                  </Button>
+                ) : null}
+                <Button size="sm" variant="secondary" onClick={bulkDelete}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {t("delete")}
+                </Button>
+              </>
+            ) : null}
           </div>
 
           <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -594,8 +597,8 @@ export default function SessionsPage({ home, t, locale }) {
               <div className="min-h-0 flex-1 overflow-auto thin-scroll border-y border-border/60">
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-card">
-                    <TableRow>
-                      <TableHead className="sticky left-0 z-20 w-10 bg-card">
+                    <TableRow className="[&>th]:px-2">
+                      <TableHead className="w-10">
                         <input
                           ref={(el) => {
                             if (el) el.indeterminate = someSelected;
@@ -615,9 +618,7 @@ export default function SessionsPage({ home, t, locale }) {
                       <TableHead className="text-right">{t("size")}</TableHead>
                       <TableHead>{t("created")}</TableHead>
                       <TableHead>{t("updated")}</TableHead>
-                      <TableHead className="sticky right-0 z-20 bg-card text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.45)]">
-                        {t("actions")}
-                      </TableHead>
+                      <TableHead className="text-right">{t("actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -640,8 +641,8 @@ export default function SessionsPage({ home, t, locale }) {
                         const ws = workspaceMap.get(row.workspaceId);
                         const busy = busyId === key;
                         return (
-                          <TableRow key={key}>
-                            <TableCell className="sticky left-0 z-10 bg-card">
+                          <TableRow key={key} className="[&>td]:px-2">
+                            <TableCell>
                               <input
                                 type="checkbox"
                                 className="h-4 w-4 accent-[hsl(var(--primary))]"
@@ -650,7 +651,7 @@ export default function SessionsPage({ home, t, locale }) {
                                 aria-label={row.title}
                               />
                             </TableCell>
-                            <TableCell className="max-w-[280px]">
+                            <TableCell className="min-w-[170px] max-w-[240px]">
                               <div className="flex min-w-0 flex-col gap-0.5">
                                 <button
                                   type="button"
@@ -677,8 +678,8 @@ export default function SessionsPage({ home, t, locale }) {
                                 ) : null}
                               </div>
                             </TableCell>
-                            <TableCell className="max-w-[160px]">
-                              <span className="truncate text-sm">
+                            <TableCell className="min-w-[150px] max-w-[220px]">
+                              <span className="block truncate text-sm" title={ws?.name || row.workspaceId}>
                                 {ws?.name || row.workspaceId}
                               </span>
                             </TableCell>
@@ -710,20 +711,20 @@ export default function SessionsPage({ home, t, locale }) {
                               </div>
                             </TableCell>
                             <TableCell className="num whitespace-nowrap text-muted-foreground">
-                              {fmtTime(
+                              {fmtTimeShort(
                                 row.createdAt ? Date.parse(row.createdAt) : null,
                                 locale
                               )}
                             </TableCell>
                             <TableCell className="num whitespace-nowrap text-muted-foreground">
-                              {fmtTime(
+                              {fmtTimeShort(
                                 row.updatedAt
                                   ? Date.parse(row.updatedAt)
                                   : null,
                                 locale
                               )}
                             </TableCell>
-                            <TableCell className="sticky right-0 z-10 bg-card text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.45)]">
+                            <TableCell className="text-right">
                               <div className="flex justify-end gap-1">
                                 {row.status === "active" ? (
                                   <Button
