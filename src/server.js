@@ -20,6 +20,20 @@ const {
   deleteWorkspace,
   getSessionPreview,
 } = require("./sessions");
+const {
+  getConfigView,
+  saveProvider,
+  deleteProvider,
+  saveModel,
+  deleteModel,
+  setDefaultModel,
+  setSecondaryModel,
+} = require("./config-store");
+const {
+  fetchCatalogOrBuiltIn,
+  catalogProviderModels,
+  importCatalogProvider,
+} = require("./catalog");
 
 // Prefer Vite build output; fall back to legacy public/ for plain static.
 const DIST = path.join(__dirname, "..", "dist");
@@ -135,6 +149,31 @@ function mapSessionError(err) {
   }
   if (code === "exists") return 409;
   return 500;
+}
+
+/** Map a ConfigError/catalog error code to an HTTP status. */
+function mapConfigError(err) {
+  const code = err && err.code;
+  if (code === "not_found") return 404;
+  if (code === "no_models") return 422;
+  if (code === "invalid_toml" || code === "read_failed" || code === "write_failed" || code === "catalog_missing") {
+    return 500;
+  }
+  if (code && code.startsWith("invalid_")) return 400;
+  return 500;
+}
+
+/** Run a config mutation, serializing success/error uniformly. */
+async function runConfig(res, fn) {
+  try {
+    const body = await fn();
+    return json(res, 200, body);
+  } catch (err) {
+    return json(res, mapConfigError(err), {
+      error: err.code || "error",
+      message: String(err.message || err),
+    });
+  }
 }
 
 function sendFile(res, filePath) {
@@ -359,6 +398,71 @@ async function handleApi(req, res, url, cliHome) {
     }
   }
 
+  // --- Model configuration (config.toml read/write) ---
+  if (url.pathname === "/api/config" && req.method === "GET") {
+    return json(res, 200, getConfigView(home));
+  }
+
+  if (url.pathname === "/api/config/providers" && req.method === "POST") {
+    return runConfig(res, async () => {
+      const body = await readBody(req);
+      return saveProvider(home, body);
+    });
+  }
+
+  const providerDelete = url.pathname.match(/^\/api\/config\/providers\/([^/]+)$/);
+  if (providerDelete && req.method === "DELETE") {
+    return runConfig(res, () => deleteProvider(home, decodeURIComponent(providerDelete[1])));
+  }
+
+  const providerModels = url.pathname.match(/^\/api\/config\/providers\/([^/]+)\/models$/);
+  if (providerModels && req.method === "POST") {
+    return runConfig(res, async () => {
+      const body = await readBody(req);
+      const providerId = decodeURIComponent(providerModels[1]);
+      return saveModel(home, { ...body, providerId });
+    });
+  }
+
+  const modelDelete = url.pathname.match(/^\/api\/config\/models\/(.+)$/);
+  if (modelDelete && req.method === "DELETE") {
+    return runConfig(res, () => deleteModel(home, decodeURIComponent(modelDelete[1])));
+  }
+
+  if (url.pathname === "/api/config/default-model" && req.method === "POST") {
+    return runConfig(res, async () => {
+      const body = await readBody(req);
+      return setDefaultModel(home, body.alias);
+    });
+  }
+
+  if (url.pathname === "/api/config/secondary-model" && req.method === "POST") {
+    return runConfig(res, async () => {
+      const body = await readBody(req);
+      return setSecondaryModel(home, body);
+    });
+  }
+
+  // --- Provider catalog (models.dev, with builtin fallback) ---
+  if (url.pathname === "/api/catalog" && req.method === "GET") {
+    return runConfig(res, async () => {
+      const force = url.searchParams.get("refresh") === "1";
+      const data = await fetchCatalogOrBuiltIn({ force });
+      return {
+        source: data.source,
+        fetchedAt: data.fetchedAt,
+        providers: data.providers.map((p) => ({ ...p, models: catalogProviderModels(p) })),
+      };
+    });
+  }
+
+  if (url.pathname === "/api/catalog/import" && req.method === "POST") {
+    return runConfig(res, async () => {
+      const body = await readBody(req);
+      return importCatalogProvider(home, body);
+    });
+  }
+
   json(res, 404, { error: "not_found" });
 }
 
@@ -377,7 +481,10 @@ function createServer(cliHome) {
       // SPA fallback for client routes
       if (
         !rel.includes(".") &&
-        (rel === "/sessions" || rel.startsWith("/sessions/"))
+        (rel === "/sessions" ||
+          rel.startsWith("/sessions/") ||
+          rel === "/models" ||
+          rel.startsWith("/models/"))
       ) {
         rel = "/index.html";
       }

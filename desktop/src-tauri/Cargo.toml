@@ -1,6 +1,6 @@
 [package]
 name = "kimicode-dashboard"
-version = "1.5.1"
+version = "1.6.0"
 description = "Kimi Code Usage Dashboard - Local Token & Session Stats"
 authors = ["Jochen"]
 edition = "2021"
@@ -22,3 +22,5 @@ regex = "1"
 dirs = "6"
 walkdir = "2"
 fs_extra = "1"
+toml = "0.8"
+ureq = { version = "3", features = ["json"] }

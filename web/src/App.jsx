@@ -2,15 +2,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { motion, useReducedMotion } from "framer-motion";
 import {
   FolderOpen,
+  Github,
   Languages,
   LayoutDashboard,
   Loader2,
   MessagesSquare,
   RefreshCw,
   ScanSearch,
+  SlidersHorizontal,
 } from "lucide-react";
 import KimiLogo from "@/components/KimiLogo";
 import SessionsPage from "@/pages/SessionsPage";
+import ModelsPage from "@/pages/ModelsPage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,8 +44,10 @@ import { DailyBars } from "@/components/DailyBars";
 import { Heatmap } from "@/components/Heatmap";
 import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtUsd } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
-import { fetchPaths, fetchPrices, fetchSummary } from "@/lib/backend";
+import { fetchPaths, fetchPrices, fetchSummary, openExternal } from "@/lib/backend";
 import { cn } from "@/lib/utils";
+
+const GITHUB_URL = "https://github.com/JochenYang/kimicode-dashboard";
 
 const RANGE_KEYS = [
   { value: "today", labelKey: "rangeToday" },
@@ -111,8 +116,10 @@ export default function App() {
   const [pageSize, setPageSize] = useState(20);
   const [modelFilter, setModelFilter] = useState("all");
   const [page, setPage] = useState(() => {
-    if (typeof window !== "undefined" && window.location.pathname.startsWith("/sessions")) {
-      return "sessions";
+    if (typeof window !== "undefined") {
+      const p = window.location.pathname;
+      if (p.startsWith("/sessions")) return "sessions";
+      if (p.startsWith("/models")) return "models";
     }
     return localStorage.getItem("kcd_page") || "usage";
   });
@@ -132,7 +139,8 @@ export default function App() {
     setPage(next);
     localStorage.setItem("kcd_page", next);
     if (typeof window !== "undefined") {
-      const path = next === "sessions" ? "/sessions" : "/";
+      const path =
+        next === "sessions" ? "/sessions" : next === "models" ? "/models" : "/";
       window.history.replaceState({}, "", path);
     }
   };
@@ -342,7 +350,7 @@ export default function App() {
               </h1>
               <span className="mb-0.5 shrink-0 text-[11px] leading-none text-muted-foreground/85 tabular-nums">
                 {fill(t("appVersionBy"), {
-                  version: "1.5.1",
+                  version: "1.6.0",
                   author: "Jochen",
                 })}
               </span>
@@ -367,6 +375,14 @@ export default function App() {
               <MessagesSquare className="h-3.5 w-3.5" />
               {t("navSessions")}
             </Button>
+            <Button
+              size="sm"
+              variant={page === "models" ? "default" : "ghost"}
+              onClick={() => goPage("models")}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {t("navModels")}
+            </Button>
           </div>
           <Select value={locale} onValueChange={changeLocale}>
             <SelectTrigger className="w-[120px]" aria-label={t("language")}>
@@ -378,6 +394,16 @@ export default function App() {
               <SelectItem value="en">English</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={t("githubLink")}
+            title={t("githubLink")}
+            className="h-9 w-9 shrink-0 rounded-lg border border-border bg-secondary/50 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            onClick={() => openExternal(GITHUB_URL)}
+          >
+            <Github className="h-4 w-4" aria-hidden />
+          </Button>
           {page === "usage" ? (
             <Button
               onClick={() => loadSummary({ refresh: true })}
@@ -473,6 +499,8 @@ export default function App() {
       {page === "sessions" ? (
         <SessionsPage home={home} t={t} locale={locale} />
       ) : null}
+
+      {page === "models" ? <ModelsPage home={home} t={t} /> : null}
 
       {page === "usage" ? (
       <>

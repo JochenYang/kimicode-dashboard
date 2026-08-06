@@ -173,3 +173,118 @@ export async function fetchSessionPreview(home, workspaceId, sessionId, status) 
   if (status) qs.set("status", status);
   return httpJson(`/api/sessions/preview?${qs.toString()}`);
 }
+
+// ---------------------------------------------------------------------------
+// Model configuration (config.toml) + provider catalog
+// ---------------------------------------------------------------------------
+
+/** GET /api/config or invoke get_config */
+export async function fetchConfig(home) {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("get_config", { homeOverride: home || null });
+  const qs = withHome({}, home);
+  return httpJson(`/api/config?${qs.toString()}`);
+}
+
+/** POST /api/config/providers or invoke save_provider */
+export async function saveProvider(home, body) {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("save_provider", { homeOverride: home || null, ...body });
+  return httpJson("/api/config/providers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** DELETE /api/config/providers/<id> or invoke delete_provider */
+export async function deleteProvider(home, providerId) {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("delete_provider", { homeOverride: home || null, providerId });
+  const qs = withHome({}, home);
+  return httpJson(`/api/config/providers/${encodeURIComponent(providerId)}?${qs.toString()}`, {
+    method: "DELETE",
+  });
+}
+
+/** POST /api/config/providers/<id>/models or invoke save_model */
+export async function saveModel(home, providerId, body) {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("save_model", { homeOverride: home || null, providerId, ...body });
+  return httpJson(`/api/config/providers/${encodeURIComponent(providerId)}/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** DELETE /api/config/models/<alias> or invoke delete_model */
+export async function deleteModel(home, alias) {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("delete_model", { homeOverride: home || null, alias });
+  const qs = withHome({}, home);
+  return httpJson(`/api/config/models/${encodeURIComponent(alias)}?${qs.toString()}`, {
+    method: "DELETE",
+  });
+}
+
+/** POST /api/config/default-model or invoke set_default_model */
+export async function setDefaultModel(home, alias) {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("set_default_model", { homeOverride: home || null, alias });
+  return httpJson("/api/config/default-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alias }),
+  });
+}
+
+/** POST /api/config/secondary-model or invoke set_secondary_model */
+export async function setSecondaryModel(home, body) {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("set_secondary_model", { homeOverride: home || null, ...body });
+  return httpJson("/api/config/secondary-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** GET /api/catalog or invoke get_catalog (builtin fallback when offline) */
+export async function fetchCatalog(home, refresh = false) {
+  const invoke = await getInvoke();
+  if (invoke) {
+    return invoke("get_catalog", { homeOverride: home || null, refresh: Boolean(refresh) });
+  }
+  const qs = withHome({}, home);
+  if (refresh) qs.set("refresh", "1");
+  return httpJson(`/api/catalog?${qs.toString()}`);
+}
+
+/** POST /api/catalog/import or invoke import_catalog */
+export async function importCatalog(home, body) {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("import_catalog", { homeOverride: home || null, ...body });
+  return httpJson("/api/catalog/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Open an external URL. Tauri shell (shell:allow-open) opens the system
+ * browser; the web build falls back to a new tab.
+ */
+export async function openExternal(url) {
+  if (detectTauri()) {
+    try {
+      const { open } = await import("@tauri-apps/plugin-shell");
+      await open(url);
+      return;
+    } catch (e) {
+      // fall through to window.open when the plugin is unavailable
+    }
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
