@@ -350,7 +350,7 @@ export default function App() {
               </h1>
               <span className="mb-0.5 shrink-0 text-[11px] leading-none text-muted-foreground/85 tabular-nums">
                 {fill(t("appVersionBy"), {
-                  version: "1.6.0",
+                  version: "1.6.1",
                   author: "Jochen",
                 })}
               </span>

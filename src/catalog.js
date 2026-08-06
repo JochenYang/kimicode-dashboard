@@ -99,7 +99,7 @@ function loadBuiltin() {
   return { source: "builtin", fetchedAt: null, providers: stripCatalog(raw) };
 }
 
-function httpGetJson(url, { timeoutMs = 15000, userAgent = "kimicode-dashboard/1.6.0" } = {}) {
+function httpGetJson(url, { timeoutMs = 15000, userAgent = "kimicode-dashboard/1.6.1" } = {}) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { "user-agent": userAgent } }, (res) => {
       if (res.statusCode !== 200) {
