@@ -434,9 +434,9 @@ function ModelDialog({ t, open, providerId, row, onClose, onSaved }) {
     setAlias(isEdit ? row.alias : `${providerId}/`);
     setModel(isEdit ? row.model || "" : "");
     setDisplayName(isEdit ? row.display_name || "" : "");
-    setMaxContextSize(isEdit ? row.max_context_size ?? "" : "");
-    setMaxInputSize(isEdit ? row.max_input_size ?? "" : "");
-    setMaxOutputSize(isEdit ? row.max_output_size ?? "" : "");
+    setMaxContextSize(isEdit ? String(row.max_context_size ?? "") : "");
+    setMaxInputSize(isEdit ? String(row.max_input_size ?? "") : "");
+    setMaxOutputSize(isEdit ? String(row.max_output_size ?? "") : "");
     setCaps(isEdit ? parseCaps(row.capabilities) : new Set());
     setSupportEfforts(isEdit && row.support_efforts ? row.support_efforts.join(", ") : "");
     setDefaultEffort(isEdit ? row.default_effort || "" : "");
@@ -469,21 +469,24 @@ function ModelDialog({ t, open, providerId, row, onClose, onSaved }) {
   async function submit() {
     setBusy(true);
     setErr(null);
+    // Fields may be pre-filled with numbers (catalog import) — coerce before trim.
+    const str = (v) => String(v ?? "").trim();
+    const num = (v) => (str(v) ? Number(str(v)) : undefined);
     try {
       const body = {
-        alias: alias.trim(),
-        model: model.trim(),
-        displayName: displayName.trim() || undefined,
-        maxContextSize: maxContextSize.trim() ? Number(maxContextSize) : undefined,
-        maxInputSize: maxInputSize.trim() ? Number(maxInputSize) : undefined,
-        maxOutputSize: maxOutputSize.trim() ? Number(maxOutputSize) : undefined,
+        alias: str(alias),
+        model: str(model),
+        displayName: str(displayName) || undefined,
+        maxContextSize: num(maxContextSize),
+        maxInputSize: num(maxInputSize),
+        maxOutputSize: num(maxOutputSize),
         capabilities: [...caps],
-        supportEfforts: supportEfforts.trim()
-          ? supportEfforts.split(",").map((s) => s.trim()).filter(Boolean)
+        supportEfforts: str(supportEfforts)
+          ? supportEfforts.split(",").map((s) => str(s)).filter(Boolean)
           : undefined,
-        defaultEffort: defaultEffort.trim() || undefined,
-        offEffort: offEffort.trim() || undefined,
-        reasoningKey: reasoningKey.trim() || undefined,
+        defaultEffort: str(defaultEffort) || undefined,
+        offEffort: str(offEffort) || undefined,
+        reasoningKey: str(reasoningKey) || undefined,
         adaptiveThinking: adaptive === "auto" ? undefined : adaptive === "on",
       };
       await onSaved(body);
@@ -1247,12 +1250,13 @@ function SecondaryTab({ t, home, config, onSaved, savedNote }) {
     }
     setBusy(true);
     setErr(null);
+    const str = (v) => String(v ?? "").trim();
     try {
       await onSaved({
-        model,
-        defaultEffort: defaultEffort.trim() || undefined,
-        offEffort: offEffort.trim() || undefined,
-        maxOutputSize: maxOutputSize.trim() ? Number(maxOutputSize) : undefined,
+        model: str(model),
+        defaultEffort: str(defaultEffort) || undefined,
+        offEffort: str(offEffort) || undefined,
+        maxOutputSize: str(maxOutputSize) ? Number(str(maxOutputSize)) : undefined,
       });
     } catch (e) {
       setErr(e.message || String(e));
